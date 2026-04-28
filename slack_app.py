@@ -11,9 +11,9 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, unquote_plus
 import requests
 
-SLACK_BOT_TOKEN     = os.environ["SLACK_BOT_TOKEN"]
-SLACK_SIGNING_SECRET = os.environ["SLACK_SIGNING_SECRET"]
-PORT                = int(os.environ.get("PORT", 3000))
+SLACK_BOT_TOKEN      = os.environ.get("SLACK_BOT_TOKEN", "")
+SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
+PORT                 = int(os.environ.get("PORT", 8080))
 
 HEADERS = {
     "Authorization": f"Bearer {SLACK_BOT_TOKEN}",
@@ -459,5 +459,7 @@ class SlackHandler(BaseHTTPRequestHandler):
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print(f"MKV Slack App running on port {PORT}")
-    HTTPServer(("0.0.0.0", PORT), SlackHandler).serve_forever()
+    print(f"MKV Slack App running on 0.0.0.0:{PORT}")
+    server = HTTPServer(("0.0.0.0", PORT), SlackHandler)
+    print(f"Server ready — listening on port {PORT}")
+    server.serve_forever()
