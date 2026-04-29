@@ -32,10 +32,15 @@ def post_msg(channel, blocks, text, ts=None):
 
 def val(state, block_id):
     try:
-        v = state["values"][block_id]["value"]
-        if isinstance(v, dict):
-            return (v.get("selected_option") or {}).get("value") or v.get("selected_date","") or "—"
-        return v or "—"
+        action = state["values"][block_id]["value"]
+        if isinstance(action, dict):
+            if action.get("value") is not None:
+                return action["value"]
+            if action.get("selected_option"):
+                return action["selected_option"]["value"]
+            if action.get("selected_date"):
+                return action["selected_date"]
+        return str(action) if action else "—"
     except: return "—"
 
 def verify(body, ts, sig):
