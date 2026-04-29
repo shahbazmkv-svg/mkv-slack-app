@@ -1,16 +1,14 @@
 """
-MKV Luxury — Slack Interactive App
-Handles Delivery, Pickup and Contract Extension forms.
-Changes:
-  - Fuel options: 1/4, 2/4, 3/4, 4/4
-  - After delivery: marks completed, posts Pickup + Extension buttons
-  - Pickup alert: includes direct Slack thread link
+MKV Luxury — Slack Interactive App (Flask version)
+More stable than Python's built-in HTTP server on Railway.
 """
 
 import os, json, hashlib, hmac, time
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from flask import Flask, request, jsonify
 from urllib.parse import parse_qs, unquote_plus
-import requests
+import requests as req_lib
+
+app = Flask(__name__)
 
 SLACK_BOT_TOKEN      = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
@@ -31,54 +29,43 @@ FUEL_OPTIONS = [
 
 # ── Signature verification ────────────────────────────────────────────────────
 
-def verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool:
+def verify_signature(body: bytes, timestamp: str, signature: str) -> bool:
     if not SLACK_SIGNING_SECRET:
-        print("WARNING: No signing secret — skipping verification")
         return True
     try:
-        if abs(time.time() - int(timestamp)) > 60 * 5:
-            print(f"Timestamp too old: {timestamp}")
+        if abs(time.time() - int(timestamp)) > 300:
             return False
-        sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
-        computed = "v0=" + hmac.new(
-            SLACK_SIGNING_SECRET.encode("utf-8"),
-            sig_basestring.encode("utf-8"),
+        basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
+        computed   = "v0=" + hmac.new(
+            SLACK_SIGNING_SECRET.encode(),
+            basestring.encode(),
             hashlib.sha256
         ).hexdigest()
-        valid = hmac.compare_digest(computed, signature)
-        if not valid:
-            print(f"Signature mismatch")
-        return valid
+        return hmac.compare_digest(computed, signature)
     except Exception as e:
-        print(f"Signature verification error: {e}")
+        print(f"Signature error: {e}")
         return False
 
-# ── Slack API helpers ─────────────────────────────────────────────────────────
+# ── Slack helpers ─────────────────────────────────────────────────────────────
 
-def slack_post(endpoint, payload):
-    return requests.post(
+def slack(endpoint, payload):
+    r = req_lib.post(
         f"https://slack.com/api/{endpoint}",
-        headers=HEADERS,
-        json=payload,
-        timeout=15,
-    ).json()
+        headers=HEADERS, json=payload, timeout=15
+    )
+    result = r.json()
+    if not result.get("ok"):
+        print(f"Slack {endpoint} error: {result.get('error')}")
+    return result
 
 def open_modal(trigger_id, modal):
-    slack_post("views.open", {"trigger_id": trigger_id, "view": modal})
+    slack("views.open", {"trigger_id": trigger_id, "view": modal})
 
 def post_message(channel, blocks, text, thread_ts=None):
     payload = {"channel": channel, "text": text, "blocks": blocks}
     if thread_ts:
         payload["thread_ts"] = thread_ts
-    return slack_post("chat.postMessage", payload)
-
-def update_message(channel, ts, blocks, text):
-    slack_post("chat.update", {
-        "channel": channel, "ts": ts,
-        "text": text, "blocks": blocks
-    })
-
-# ── Value extractor ───────────────────────────────────────────────────────────
+    slack("chat.postMessage", payload)
 
 def v(state, block_id):
     try:
@@ -92,12 +79,12 @@ def v(state, block_id):
 
 # ── Modals ────────────────────────────────────────────────────────────────────
 
-def make_delivery_modal(booking, trigger_id, channel, ts):
+def delivery_modal(booking, trigger_id, channel, ts):
     open_modal(trigger_id, {
         "type": "modal",
         "callback_id": "delivery_submit",
         "private_metadata": json.dumps({"channel": channel, "ts": ts, "booking": booking}),
-        "title": {"type": "plain_text", "text": "Vehicle Delivered"},
+        "title":  {"type": "plain_text", "text": "Vehicle Delivered"},
         "submit": {"type": "plain_text", "text": "Submit"},
         "close":  {"type": "plain_text", "text": "Cancel"},
         "blocks": [
@@ -134,13 +121,12 @@ def make_delivery_modal(booking, trigger_id, channel, ts):
         ]
     })
 
-
-def make_pickup_modal(booking, trigger_id, channel, ts):
+def pickup_modal(booking, trigger_id, channel, ts):
     open_modal(trigger_id, {
         "type": "modal",
         "callback_id": "pickup_submit",
         "private_metadata": json.dumps({"channel": channel, "ts": ts, "booking": booking}),
-        "title": {"type": "plain_text", "text": "Contract Closed"},
+        "title":  {"type": "plain_text", "text": "Contract Closed"},
         "submit": {"type": "plain_text", "text": "Submit"},
         "close":  {"type": "plain_text", "text": "Cancel"},
         "blocks": [
@@ -198,13 +184,12 @@ def make_pickup_modal(booking, trigger_id, channel, ts):
         ]
     })
 
-
-def make_extension_modal(booking, trigger_id, channel, ts):
+def extension_modal(booking, trigger_id, channel, ts):
     open_modal(trigger_id, {
         "type": "modal",
         "callback_id": "extension_submit",
         "private_metadata": json.dumps({"channel": channel, "ts": ts, "booking": booking}),
-        "title": {"type": "plain_text", "text": "Contract Extension"},
+        "title":  {"type": "plain_text", "text": "Contract Extension"},
         "submit": {"type": "plain_text", "text": "Submit"},
         "close":  {"type": "plain_text", "text": "Cancel"},
         "blocks": [
@@ -271,7 +256,7 @@ def make_extension_modal(booking, trigger_id, channel, ts):
 
 # ── Submission handlers ───────────────────────────────────────────────────────
 
-def handle_delivery_submit(payload):
+def handle_delivery(payload):
     meta    = json.loads(payload["view"]["private_metadata"])
     channel = meta["channel"]
     ts      = meta["ts"]
@@ -285,252 +270,170 @@ def handle_delivery_submit(payload):
     photos  = v(state, "photos_uploaded")
     remarks = v(state, "remarks")
 
-    # Update booking data with delivery info for subsequent buttons
     booking["driver"]  = driver
     booking["out_km"]  = out_km
     booking_json       = json.dumps(booking)
 
-    # Post delivery completed summary in thread
     post_message(channel, [
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn",
-                "text": (
-                    f"✅ *DELIVERY COMPLETED*\n"
-                    f"```\n"
-                    f"{'Driver':<14}: {driver}\n"
-                    f"{'Out KM':<14}: {out_km}\n"
-                    f"{'Fuel Level':<14}: {fuel}\n"
-                    f"{'Photos':<14}: {photos}\n"
-                    f"{'Remarks':<14}: {remarks}\n"
-                    f"```"
-                )}
-        },
+        {"type": "section", "text": {"type": "mrkdwn",
+            "text": (
+                f"✅ *DELIVERY COMPLETED*\n"
+                f"```\n"
+                f"{'Driver':<14}: {driver}\n"
+                f"{'Out KM':<14}: {out_km}\n"
+                f"{'Fuel Level':<14}: {fuel}\n"
+                f"{'Photos':<14}: {photos}\n"
+                f"{'Remarks':<14}: {remarks}\n"
+                f"```"
+            )}},
         {"type": "divider"},
-        {
-            "type": "actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "🔑  Pickup"},
-                    "style": "primary",
-                    "action_id": "open_pickup",
-                    "value": booking_json
-                },
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "📋  Extension"},
-                    "action_id": "open_extension",
-                    "value": booking_json
-                },
-            ]
-        },
-        {
-            "type": "context",
-            "elements": [{"type": "mrkdwn",
-                "text": f"Submitted by @{user} | Pickup: PENDING"}]
-        },
+        {"type": "actions", "elements": [
+            {"type": "button", "text": {"type": "plain_text", "text": "🔑  Pickup"},
+             "style": "primary", "action_id": "open_pickup", "value": booking_json},
+            {"type": "button", "text": {"type": "plain_text", "text": "📋  Extension"},
+             "action_id": "open_extension", "value": booking_json},
+        ]},
+        {"type": "context", "elements": [{"type": "mrkdwn",
+            "text": f"Submitted by @{user} | Pickup: PENDING"}]},
     ], f"✅ Delivery completed by {user}", thread_ts=ts)
 
 
-def handle_pickup_submit(payload):
+def handle_pickup(payload):
     meta    = json.loads(payload["view"]["private_metadata"])
     channel = meta["channel"]
     ts      = meta["ts"]
     state   = payload["view"]["state"]
     user    = payload["user"]["name"]
 
-    in_km   = v(state, "in_km")
-    extra   = v(state, "extra_km")
-    salik   = v(state, "salik")
-    fines   = v(state, "fines")
-    fuel_c  = v(state, "fuel_charge")
-    damage  = v(state, "damage_charges")
-    amount  = v(state, "amount_collected")
-    payment = v(state, "payment_mode")
-    remarks = v(state, "remarks")
-
     post_message(channel, [
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn",
-                "text": (
-                    f"✅ *CONTRACT CLOSED*\n"
-                    f"```\n"
-                    f"{'In KM':<16}: {in_km}\n"
-                    f"{'Extra KM':<16}: {extra}\n"
-                    f"{'Salik':<16}: {salik}\n"
-                    f"{'Fines':<16}: {fines}\n"
-                    f"{'Fuel Charge':<16}: {fuel_c}\n"
-                    f"{'Damage':<16}: {damage}\n"
-                    f"{'Amt Collected':<16}: {amount}\n"
-                    f"{'Payment Mode':<16}: {payment}\n"
-                    f"{'Remarks':<16}: {remarks}\n"
-                    f"```\n"
-                    f"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"
-                )}
-        },
-        {
-            "type": "context",
-            "elements": [{"type": "mrkdwn",
-                "text": f"Submitted by @{user}"}]
-        },
+        {"type": "section", "text": {"type": "mrkdwn",
+            "text": (
+                f"✅ *CONTRACT CLOSED*\n"
+                f"```\n"
+                f"{'In KM':<16}: {v(state,'in_km')}\n"
+                f"{'Extra KM':<16}: {v(state,'extra_km')}\n"
+                f"{'Salik':<16}: {v(state,'salik')}\n"
+                f"{'Fines':<16}: {v(state,'fines')}\n"
+                f"{'Fuel Charge':<16}: {v(state,'fuel_charge')}\n"
+                f"{'Damage':<16}: {v(state,'damage_charges')}\n"
+                f"{'Amt Collected':<16}: {v(state,'amount_collected')}\n"
+                f"{'Payment Mode':<16}: {v(state,'payment_mode')}\n"
+                f"{'Remarks':<16}: {v(state,'remarks')}\n"
+                f"```\n"
+                f"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"
+            )}},
+        {"type": "context", "elements": [{"type": "mrkdwn",
+            "text": f"Submitted by @{user}"}]},
     ], f"✅ Contract closed by {user}", thread_ts=ts)
 
 
-def handle_extension_submit(payload):
+def handle_extension(payload):
     meta    = json.loads(payload["view"]["private_metadata"])
     channel = meta["channel"]
     ts      = meta["ts"]
     state   = payload["view"]["state"]
     user    = payload["user"]["name"]
-
-    new_date  = v(state, "new_return_date")
-    in_km     = v(state, "in_km")
-    salik     = v(state, "salik")
-    fines     = v(state, "fines")
-    fuel_c    = v(state, "fuel_charge")
-    damage    = v(state, "damage_charges")
-    ext_days  = v(state, "extension_days")
-    ext_amt   = v(state, "extension_amount")
-    ext_coll  = v(state, "extension_amount_collected")
-    ext_pay   = v(state, "extension_payment_mode")
-    remarks   = v(state, "remarks")
-
-    booking      = meta["booking"]
-    booking_json = json.dumps(booking)
+    booking = meta["booking"]
 
     post_message(channel, [
-        {
-            "type": "section",
-            "text": {"type": "mrkdwn",
-                "text": (
-                    f"📋 *CONTRACT EXTENDED*\n"
-                    f"```\n"
-                    f"{'New Return Date':<20}: {new_date}\n"
-                    f"{'Extension Days':<20}: {ext_days}\n"
-                    f"{'In KM':<20}: {in_km}\n"
-                    f"{'Salik':<20}: {salik}\n"
-                    f"{'Fines':<20}: {fines}\n"
-                    f"{'Fuel Charge':<20}: {fuel_c}\n"
-                    f"{'Damage':<20}: {damage}\n"
-                    f"{'Ext Amount':<20}: {ext_amt}\n"
-                    f"{'Ext Collected':<20}: {ext_coll}\n"
-                    f"{'Payment Mode':<20}: {ext_pay}\n"
-                    f"{'Remarks':<20}: {remarks}\n"
-                    f"```\n"
-                    f"*CONTRACT ACTIVE — EXTENDED | Final Pickup: PENDING*"
-                )}
-        },
+        {"type": "section", "text": {"type": "mrkdwn",
+            "text": (
+                f"📋 *CONTRACT EXTENDED*\n"
+                f"```\n"
+                f"{'New Return Date':<20}: {v(state,'new_return_date')}\n"
+                f"{'Extension Days':<20}: {v(state,'extension_days')}\n"
+                f"{'In KM':<20}: {v(state,'in_km')}\n"
+                f"{'Salik':<20}: {v(state,'salik')}\n"
+                f"{'Fines':<20}: {v(state,'fines')}\n"
+                f"{'Fuel Charge':<20}: {v(state,'fuel_charge')}\n"
+                f"{'Damage':<20}: {v(state,'damage_charges')}\n"
+                f"{'Ext Amount':<20}: {v(state,'extension_amount')}\n"
+                f"{'Ext Collected':<20}: {v(state,'extension_amount_collected')}\n"
+                f"{'Payment Mode':<20}: {v(state,'extension_payment_mode')}\n"
+                f"{'Remarks':<20}: {v(state,'remarks')}\n"
+                f"```\n"
+                f"*CONTRACT ACTIVE — EXTENDED | Final Pickup: PENDING*"
+            )}},
         {"type": "divider"},
-        {
-            "type": "actions",
-            "elements": [
-                {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "🔑  Pickup"},
-                    "style": "primary",
-                    "action_id": "open_pickup",
-                    "value": booking_json
-                },
-            ]
-        },
-        {
-            "type": "context",
-            "elements": [{"type": "mrkdwn",
-                "text": f"Submitted by @{user}"}]
-        },
+        {"type": "actions", "elements": [
+            {"type": "button", "text": {"type": "plain_text", "text": "🔑  Pickup"},
+             "style": "primary", "action_id": "open_pickup",
+             "value": json.dumps(booking)},
+        ]},
+        {"type": "context", "elements": [{"type": "mrkdwn",
+            "text": f"Submitted by @{user}"}]},
     ], f"📋 Contract extended by {user}", thread_ts=ts)
 
+# ── Routes ────────────────────────────────────────────────────────────────────
 
-# ── HTTP Handler ──────────────────────────────────────────────────────────────
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "service": "MKV Slack App"})
 
-class SlackHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        print(f"[{self.address_string()}] {format % args}")
+@app.route("/slack/actions", methods=["POST"])
+def slack_actions():
+    body      = request.get_data()
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "0")
+    signature = request.headers.get("X-Slack-Signature", "")
 
-    def respond(self, code=200, body=b""):
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(body)
+    print(f"POST /slack/actions — Content-Length: {len(body)}")
 
-    def do_POST(self):
-        length  = int(self.headers.get("Content-Length", 0))
-        body    = self.rfile.read(length)
-        ts      = self.headers.get("X-Slack-Request-Timestamp", "0")
-        sig     = self.headers.get("X-Slack-Signature", "")
+    # Handle URL verification challenge
+    try:
+        json_body = json.loads(body.decode())
+        if json_body.get("type") == "url_verification":
+            print("URL verification challenge — responding")
+            return jsonify({"challenge": json_body.get("challenge", "")})
+    except:
+        pass
 
-        print(f"POST {self.path} | Content-Length: {length} | Has-Timestamp: {bool(ts)} | Has-Sig: {bool(sig)}")
+    if not verify_signature(body, timestamp, signature):
+        print("Signature verification failed")
+        return jsonify({"error": "invalid signature"}), 401
 
-        # Temporarily log but don't block — helps debug signature issues
-        sig_ok = verify_slack_signature(body, ts, sig)
-        print(f"Signature check: {'OK' if sig_ok else 'FAILED — continuing anyway for debug'}")
+    raw     = parse_qs(body.decode())
+    payload = json.loads(unquote_plus(raw.get("payload", ["{}"])[0]))
+    p_type  = payload.get("type")
 
-        if self.path == "/slack/actions":
-            # Handle Slack URL verification challenge
-            try:
-                json_body = json.loads(body.decode())
-                if json_body.get("type") == "url_verification":
-                    challenge = json_body.get("challenge", "")
-                    print(f"URL verification challenge received — responding")
-                    self.respond(200, json.dumps({"challenge": challenge}).encode())
-                    return
-            except:
-                pass
+    print(f"Payload type: {p_type}")
 
-            raw     = parse_qs(body.decode())
-            payload = json.loads(unquote_plus(raw.get("payload", ["{}"])[0]))
-            p_type  = payload.get("type")
+    if p_type == "block_actions":
+        action_id = payload["actions"][0]["action_id"]
+        trigger   = payload["trigger_id"]
+        channel   = payload["container"]["channel_id"]
+        msg_ts    = payload["container"]["message_ts"]
 
-            if p_type == "block_actions":
-                action_id = payload["actions"][0]["action_id"]
-                trigger   = payload["trigger_id"]
-                channel   = payload["container"]["channel_id"]
-                msg_ts    = payload["container"]["message_ts"]
+        try:
+            booking = json.loads(payload["actions"][0].get("value", "{}"))
+        except:
+            booking = {}
 
-                bk = payload["actions"][0].get("value", "{}")
-                try:
-                    booking = json.loads(bk)
-                except:
-                    booking = {}
+        print(f"Action: {action_id}")
 
-                if action_id == "open_delivery":
-                    make_delivery_modal(booking, trigger, channel, msg_ts)
-                elif action_id == "open_pickup":
-                    make_pickup_modal(booking, trigger, channel, msg_ts)
-                elif action_id == "open_extension":
-                    make_extension_modal(booking, trigger, channel, msg_ts)
+        if action_id == "open_delivery":
+            delivery_modal(booking, trigger, channel, msg_ts)
+        elif action_id == "open_pickup":
+            pickup_modal(booking, trigger, channel, msg_ts)
+        elif action_id == "open_extension":
+            extension_modal(booking, trigger, channel, msg_ts)
 
-                self.respond(200, b"")
+        return "", 200
 
-            elif p_type == "view_submission":
-                cb = payload["view"]["callback_id"]
-                if cb == "delivery_submit":
-                    handle_delivery_submit(payload)
-                elif cb == "pickup_submit":
-                    handle_pickup_submit(payload)
-                elif cb == "extension_submit":
-                    handle_extension_submit(payload)
-                self.respond(200, b'{"response_action":"clear"}')
-            else:
-                self.respond(200, b"")
+    elif p_type == "view_submission":
+        cb = payload["view"]["callback_id"]
+        print(f"View submission: {cb}")
+        if cb == "delivery_submit":
+            handle_delivery(payload)
+        elif cb == "pickup_submit":
+            handle_pickup(payload)
+        elif cb == "extension_submit":
+            handle_extension(payload)
+        return jsonify({"response_action": "clear"})
 
-        elif self.path == "/health":
-            self.respond(200, b'{"status":"ok","service":"MKV Slack App"}')
-        else:
-            self.respond(404, b'{"error":"not found"}')
-
-    def do_GET(self):
-        if self.path == "/health":
-            self.respond(200, b'{"status":"ok","service":"MKV Slack App"}')
-        else:
-            self.respond(404)
+    return "", 200
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    print(f"MKV Slack App running on 0.0.0.0:{PORT}")
-    server = HTTPServer(("0.0.0.0", PORT), SlackHandler)
-    print(f"Server ready — listening on port {PORT}")
-    server.serve_forever()
+    print(f"MKV Slack App (Flask) starting on port {PORT}")
+    app.run(host="0.0.0.0", port=PORT, debug=False)
