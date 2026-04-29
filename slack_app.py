@@ -103,27 +103,6 @@ def pickup_modal(b, trigger, ch, ts):
              "element":{"type":"plain_text_input","action_id":"value","multiline":True,"placeholder":{"type":"plain_text","text":"Optional"}}},
         ]})
 
-def extension_modal(b, trigger, ch, ts):
-    open_modal(trigger, {"type":"modal","callback_id":"extension_submit",
-        "private_metadata": json.dumps({"channel":ch,"ts":ts,"booking":b}),
-        "title":{"type":"plain_text","text":"Contract Extension"},
-        "submit":{"type":"plain_text","text":"Submit"},
-        "close":{"type":"plain_text","text":"Cancel"},
-        "blocks":[
-            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | {b.get('date','—')}"}},
-            {"type":"context","elements":[{"type":"mrkdwn","text":"_Other charges (Salik, Fines, KM, Damage) will be captured at final Pickup_"}]},
-            {"type":"divider"},
-            {"type":"input","block_id":"driver_name","label":{"type":"plain_text","text":"Driver Name"},
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. Ahmed"}}},
-            {"type":"input","block_id":"new_return_date","label":{"type":"plain_text","text":"New Return Date"},
-             "element":{"type":"datepicker","action_id":"value","placeholder":{"type":"plain_text","text":"Select new return date"}}},
-            {"type":"input","block_id":"extension_payment_mode","label":{"type":"plain_text","text":"Extension Payment Mode"},
-             "element":{"type":"static_select","action_id":"value","placeholder":{"type":"plain_text","text":"Select payment mode"},
-             "options":[{"text":{"type":"plain_text","text":"Cash"},"value":"Cash"},{"text":{"type":"plain_text","text":"Card"},"value":"Card"},{"text":{"type":"plain_text","text":"Bank Transfer"},"value":"Bank Transfer"}]}},
-            {"type":"input","block_id":"remarks","label":{"type":"plain_text","text":"Remarks"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","multiline":True,"placeholder":{"type":"plain_text","text":"Optional"}}},
-        ]})
-
 def handle_delivery(payload):
     meta    = json.loads(payload["view"]["private_metadata"])
     state   = payload["view"]["state"]
@@ -168,33 +147,6 @@ def handle_pickup(payload):
         )}},
         {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user}"}]},
     ], f"✅ Contract closed by {user}", meta["ts"])
-
-def handle_extension(payload):
-    meta     = json.loads(payload["view"]["private_metadata"])
-    state    = payload["view"]["state"]
-    user     = payload["user"]["name"]
-    booking  = meta["booking"]
-    driver   = val(state, "driver_name")
-    new_date = val(state, "new_return_date")
-    payment  = val(state, "extension_payment_mode")
-    remarks  = val(state, "remarks")
-    post_msg(meta["channel"], [
-        {"type":"section","text":{"type":"mrkdwn","text":(
-            f"📋 *CONTRACT EXTENDED*\n```\n"
-            f"{'Driver':<20}: {driver}\n"
-            f"{'New Return Date':<20}: {new_date}\n"
-            f"{'Payment Mode':<20}: {payment}\n"
-            f"{'Remarks':<20}: {remarks}\n```\n"
-            f"*CONTRACT ACTIVE — EXTENDED | Final Pickup: PENDING*"
-        )}},
-        {"type":"divider"},
-        {"type":"actions","elements":[
-            {"type":"button","text":{"type":"plain_text","text":"🔑  Final Pickup"},
-             "style":"primary","action_id":"open_pickup","value":json.dumps(booking)},
-        ]},
-        {"type":"context","elements":[{"type":"mrkdwn",
-            "text":f"Extended by @{user} | Driver: {driver} | New Return: {new_date} | Payment: {payment}"}]},
-    ], f"📋 Contract extended by {user}", meta["ts"])
 
 # ── HTTP Handler ──────────────────────────────────────────────────────────────
 
@@ -247,7 +199,7 @@ class Handler(BaseHTTPRequestHandler):
             print(f"Action: {aid}")
             if aid == "open_delivery":   delivery_modal(bk, trigger, ch, mts)
             elif aid == "open_pickup":   pickup_modal(bk, trigger, ch, mts)
-            elif aid == "open_extension": extension_modal(bk, trigger, ch, mts)
+
             self.send_json(200, b"")
 
         elif ptype == "view_submission":
@@ -255,7 +207,7 @@ class Handler(BaseHTTPRequestHandler):
             print(f"Submit: {cb}")
             if cb == "delivery_submit":   handle_delivery(payload)
             elif cb == "pickup_submit":   handle_pickup(payload)
-            elif cb == "extension_submit": handle_extension(payload)
+
             self.send_json(200, b'{"response_action":"clear"}')
         else:
             self.send_json(200, b"")
