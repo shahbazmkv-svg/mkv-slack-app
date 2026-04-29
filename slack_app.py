@@ -32,13 +32,26 @@ FUEL_OPTIONS = [
 # ── Signature verification ────────────────────────────────────────────────────
 
 def verify_slack_signature(body: bytes, timestamp: str, signature: str) -> bool:
-    if abs(time.time() - int(timestamp)) > 60 * 5:
+    if not SLACK_SIGNING_SECRET:
+        print("WARNING: No signing secret — skipping verification")
+        return True
+    try:
+        if abs(time.time() - int(timestamp)) > 60 * 5:
+            print(f"Timestamp too old: {timestamp}")
+            return False
+        sig_basestring = f"v0:{timestamp}:{body.decode('utf-8')}"
+        computed = "v0=" + hmac.new(
+            SLACK_SIGNING_SECRET.encode("utf-8"),
+            sig_basestring.encode("utf-8"),
+            hashlib.sha256
+        ).hexdigest()
+        valid = hmac.compare_digest(computed, signature)
+        if not valid:
+            print(f"Signature mismatch")
+        return valid
+    except Exception as e:
+        print(f"Signature verification error: {e}")
         return False
-    sig_basestring = f"v0:{timestamp}:{body.decode()}"
-    computed = "v0=" + hmac.new(
-        SLACK_SIGNING_SECRET.encode(), sig_basestring.encode(), hashlib.sha256
-    ).hexdigest()
-    return hmac.compare_digest(computed, signature)
 
 # ── Slack API helpers ─────────────────────────────────────────────────────────
 
@@ -448,9 +461,14 @@ class SlackHandler(BaseHTTPRequestHandler):
         ts      = self.headers.get("X-Slack-Request-Timestamp", "0")
         sig     = self.headers.get("X-Slack-Signature", "")
 
+        print(f"POST {self.path} | Content-Length: {length} | Has-Timestamp: {bool(ts)} | Has-Sig: {bool(sig)}")
+
         if not verify_slack_signature(body, ts, sig):
+            print(f"Signature verification FAILED for {self.path}")
             self.respond(401, b'{"error":"invalid signature"}')
             return
+        
+        print(f"Signature verified OK for {self.path}")
 
         if self.path == "/slack/actions":
             raw     = parse_qs(body.decode())
