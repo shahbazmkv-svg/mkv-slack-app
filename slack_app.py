@@ -13,7 +13,7 @@ import requests
 
 SLACK_BOT_TOKEN      = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
-PORT                 = int(os.environ.get("PORT", 8080))
+PORT                 = int(os.environ.get("PORT", 3000))
 
 HEADERS = {
     "Authorization": f"Bearer {SLACK_BOT_TOKEN}",
