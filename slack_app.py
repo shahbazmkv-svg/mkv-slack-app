@@ -98,7 +98,7 @@ def pickup_modal(b, trigger, ch, ts):
              "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 2,143"}}},
             {"type":"input","block_id":"payment_mode","label":{"type":"plain_text","text":"Payment Mode"},
              "element":{"type":"static_select","action_id":"value","placeholder":{"type":"plain_text","text":"Select"},
-             "options":[{"text":{"type":"plain_text","text":"Cash"},"value":"Cash"},{"text":{"type":"plain_text","text":"Card"},"value":"Card"},{"text":{"type":"plain_text","text":"Bank Transfer"},"value":"Bank Transfer"}]}},
+             "options":[{"text":{"type":"plain_text","text":"Cash"},"value":"Cash"},{"text":{"type":"plain_text","text":"Card"},"value":"Card"},{"text":{"type":"plain_text","text":"Bank Transfer"},"value":"Bank Transfer"},{"text":{"type":"plain_text","text":"Crypto"},"value":"Crypto"}]}},
             {"type":"input","block_id":"remarks","label":{"type":"plain_text","text":"Remarks"},"optional":True,
              "element":{"type":"plain_text_input","action_id":"value","multiline":True,"placeholder":{"type":"plain_text","text":"Optional"}}},
         ]})
