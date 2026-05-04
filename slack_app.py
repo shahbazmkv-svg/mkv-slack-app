@@ -7,6 +7,22 @@ SLACK_BOT_TOKEN      = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 PORT                 = int(os.environ.get("PORT", 3000))
 
+# ── Channel routing ────────────────────────────────────────────────────────────
+# Booking card posts here (existing — unchanged)
+CHANNEL_BOOKINGS  = "C0ABPC606F7"   # #mkv-bookings
+
+# Delivery completions post here — replace with your #mkvdelivery channel ID
+CHANNEL_DELIVERY  = os.environ.get("CHANNEL_DELIVERY", "REPLACE_WITH_MKVDELIVERY_ID")
+
+# Pickup / contract closures post here — replace with your #mkvpickup channel ID
+CHANNEL_PICKUP    = os.environ.get("CHANNEL_PICKUP",   "REPLACE_WITH_MKVPICKUP_ID")
+
+# TEST MODE — set to False in production
+TEST_MODE         = True
+if TEST_MODE:
+    CHANNEL_DELIVERY = "C0AVCCCG0S0"   # #mkvtest
+    CHANNEL_PICKUP   = "C0AVCCCG0S0"   # #mkvtest
+
 HEADERS = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}", "Content-Type": "application/json; charset=utf-8"}
 
 FUEL_OPTIONS = [
@@ -113,9 +129,16 @@ def handle_delivery(payload):
     driver  = val(state, "driver_name")
     out_km  = val(state, "out_km")
     booking.update({"driver": driver, "out_km": out_km})
-    post_msg(meta["channel"], [
+    # Post delivery result to #mkvdelivery (not back to #mkv-bookings)
+    post_msg(CHANNEL_DELIVERY, [
+        {"type":"header","text":{"type":"plain_text","text":"🚗 DELIVERY COMPLETED","emoji":True}},
         {"type":"section","text":{"type":"mrkdwn","text":(
-            f"✅ *DELIVERY COMPLETED*\n```\n"
+            f"*{booking.get('id','—')}* | {booking.get('car','—')} | `{booking.get('plate','—')}`\n"
+            f"*Customer:* {booking.get('customer','—')} | *Date:* {booking.get('date','—')} {booking.get('time','')}"
+        )}},
+        {"type":"divider"},
+        {"type":"section","text":{"type":"mrkdwn","text":(
+            f"```\n"
             f"{'Driver':<14}: {driver}\n"
             f"{'Out KM':<14}: {out_km}\n"
             f"{'Fuel Level':<14}: {val(state,'fuel_level')}\n"
@@ -124,10 +147,12 @@ def handle_delivery(payload):
         )}},
         {"type":"divider"},
         {"type":"actions","elements":[
-            {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary","action_id":"open_pickup","value":json.dumps(booking)},
+            {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary",
+             "action_id":"open_pickup","value":json.dumps(booking)},
         ]},
-        {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Pickup: PENDING"}]},
-    ], f"✅ Delivery completed by {user}", meta["ts"])
+        {"type":"context","elements":[{"type":"mrkdwn",
+            "text":f"Submitted by @{user} | Pickup: PENDING | <#{meta['channel']}|View Booking>"}]},
+    ], f"✅ Delivery: {booking.get('car','—')} ({booking.get('plate','—')})")
 
 def handle_pickup(payload):
     meta    = json.loads(payload["view"]["private_metadata"])
@@ -145,7 +170,8 @@ def handle_pickup(payload):
     except:
         km_driven_str = "— (Out KM not recorded)"
 
-    post_msg(meta["channel"], [
+    # Post closure to #mkvpickup (not back to #mkv-bookings)
+    post_msg(CHANNEL_PICKUP, [
         # ── Contract header ───────────────────────────────────────────────────
         {"type":"section","text":{"type":"mrkdwn","text":"✅ *CONTRACT CLOSED*"}},
         {"type":"divider"},
@@ -173,7 +199,7 @@ def handle_pickup(payload):
         {"type":"divider"},
         {"type":"section","text":{"type":"mrkdwn","text":"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"}},
         {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user}"}]},
-    ], f"✅ Contract closed by {user}", meta["ts"])
+    ], f"✅ Contract closed: {meta['booking'].get('car','—')} ({meta['booking'].get('plate','—')})")
 
 # ── HTTP Handler ──────────────────────────────────────────────────────────────
 
@@ -219,13 +245,21 @@ class Handler(BaseHTTPRequestHandler):
         if ptype == "block_actions":
             aid     = payload["actions"][0]["action_id"]
             trigger = payload["trigger_id"]
-            ch      = payload["container"]["channel_id"]
+            ch      = payload["container"]["channel_id"]   # originating channel
             mts     = payload["container"]["message_ts"]
             try: bk = json.loads(payload["actions"][0].get("value", "{}"))
             except: bk = {}
-            print(f"Action: {aid}")
-            if aid == "open_delivery":   delivery_modal(bk, trigger, ch, mts)
-            elif aid == "open_pickup":   pickup_modal(bk, trigger, ch, mts)
+            print(f"Action: {aid} | from channel: {ch}")
+
+            if aid == "open_delivery":
+                # Always open delivery modal — result posts to CHANNEL_DELIVERY
+                delivery_modal(bk, trigger, CHANNEL_DELIVERY, mts)
+
+            elif aid == "open_pickup":
+                # Always open pickup modal — result posts to CHANNEL_PICKUP
+                # Pass originating booking channel so we can link back to it
+                bk["booking_channel"] = CHANNEL_BOOKINGS
+                pickup_modal(bk, trigger, CHANNEL_PICKUP, mts)
 
             self.send_json(200, b"")
 
