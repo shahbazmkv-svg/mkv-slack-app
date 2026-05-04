@@ -146,21 +146,32 @@ def handle_pickup(payload):
         km_driven_str = "— (Out KM not recorded)"
 
     post_msg(meta["channel"], [
+        # ── Contract header ───────────────────────────────────────────────────
+        {"type":"section","text":{"type":"mrkdwn","text":"✅ *CONTRACT CLOSED*"}},
+        {"type":"divider"},
+
+        # ── KM Table — 3 columns ──────────────────────────────────────────────
+        {"type":"section","text":{"type":"mrkdwn","text":"*🚗 Odometer Summary*"}},
+        {"type":"section","fields":[
+            {"type":"mrkdwn","text":f"*Out KM*\n_(auto — from delivery)_\n`{out_km}`"},
+            {"type":"mrkdwn","text":f"*In KM*\n_(entered at pickup)_\n`{in_km}`"},
+            {"type":"mrkdwn","text":f"*KM Driven*\n_(auto-calculated)_\n`{km_driven_str}`"},
+        ]},
+        {"type":"divider"},
+
+        # ── Charges summary ───────────────────────────────────────────────────
         {"type":"section","text":{"type":"mrkdwn","text":(
-            f"✅ *CONTRACT CLOSED*\n```\n"
-            f"{'Out KM':<16}: {out_km}\n"
-            f"{'In KM':<16}: {in_km}\n"
-            f"{'KM Driven':<16}: {km_driven_str}\n"
-            f"{'─'*34}\n"
+            f"*💰 Charges & Closure*\n```\n"
             f"{'Salik':<16}: {val(state,'salik')}\n"
             f"{'Fines':<16}: {val(state,'fines')}\n"
             f"{'Fuel Charge':<16}: {val(state,'fuel_charge')}\n"
             f"{'Damage':<16}: {val(state,'damage_charges')}\n"
             f"{'Amt Collected':<16}: {val(state,'amount_collected')}\n"
             f"{'Payment Mode':<16}: {val(state,'payment_mode')}\n"
-            f"{'Remarks':<16}: {val(state,'remarks')}\n```\n"
-            f"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"
+            f"{'Remarks':<16}: {val(state,'remarks')}\n```"
         )}},
+        {"type":"divider"},
+        {"type":"section","text":{"type":"mrkdwn","text":"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"}},
         {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user}"}]},
     ], f"✅ Contract closed by {user}", meta["ts"])
 
