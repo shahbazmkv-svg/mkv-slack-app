@@ -33,11 +33,35 @@ FUEL_OPTIONS = [
     {"text": {"type": "plain_text", "text": "0/4 — Empty"},  "value": "0/4"},
 ]
 
+THREAD_STORE = "booking_thread_store.json"
+SLACK_WORKSPACE = "mkv-luxury"
+
 def slack(endpoint, payload):
     r = requests.post(f"https://slack.com/api/{endpoint}", headers=HEADERS, json=payload, timeout=15)
     res = r.json()
     if not res.get("ok"): print(f"Slack error [{endpoint}]: {res.get('error')}")
     return res
+
+def get_booking_thread_link(contract_id, plate="", start_date=""):
+    """Read booking_thread_store.json and return a Slack link to the original booking thread."""
+    try:
+        with open(THREAD_STORE) as f:
+            store = json.load(f).get("bookings", {})
+        # Try contract ID first
+        entry = store.get(contract_id)
+        if not entry:
+            # Fallback: match by plate + start_date
+            for v in store.values():
+                if v.get("plate") == plate and v.get("start_date") == start_date:
+                    entry = v
+                    break
+        if entry and entry.get("thread_ts"):
+            ts_clean = entry["thread_ts"].replace(".", "")
+            ch = CHANNEL_TEST if TEST_MODE else CHANNEL_BOOKINGS
+            return f"https://{SLACK_WORKSPACE}.slack.com/archives/{ch}/p{ts_clean}"
+    except Exception as e:
+        print(f"Thread store error: {e}")
+    return None
 
 def open_modal(trigger_id, modal): slack("views.open", {"trigger_id": trigger_id, "view": modal})
 
@@ -129,7 +153,16 @@ def handle_delivery(payload):
     driver  = val(state, "driver_name")
     out_km  = val(state, "out_km")
     booking.update({"driver": driver, "out_km": out_km})
-    # Post delivery result to #mkvdelivery (not back to #mkv-bookings)
+
+    # Get link back to original booking thread in #mkv-bookings
+    thread_link = get_booking_thread_link(
+        booking.get("id", ""),
+        booking.get("plate", ""),
+        booking.get("start_date", "")
+    )
+    source_link = f"<{thread_link}|📋 View Booking Thread>" if thread_link else "📋 Booking thread not found"
+
+    # Post delivery result to #mkvdelivery
     post_msg(CHANNEL_DELIVERY, [
         {"type":"header","text":{"type":"plain_text","text":"🚗 DELIVERY COMPLETED","emoji":True}},
         {"type":"section","text":{"type":"mrkdwn","text":(
@@ -151,7 +184,7 @@ def handle_delivery(payload):
              "action_id":"open_pickup","value":json.dumps(booking)},
         ]},
         {"type":"context","elements":[{"type":"mrkdwn",
-            "text":f"Submitted by @{user} | Pickup: PENDING | <#{meta['channel']}|View Booking>"}]},
+            "text":f"Submitted by @{user} | Pickup: PENDING | {source_link}"}]},
     ], f"✅ Delivery: {booking.get('car','—')} ({booking.get('plate','—')})")
 
 def handle_pickup(payload):
@@ -170,7 +203,15 @@ def handle_pickup(payload):
     except:
         km_driven_str = "— (Out KM not recorded)"
 
-    # Post closure to #mkvpickup (not back to #mkv-bookings)
+    # Get link back to original booking thread in #mkv-bookings
+    thread_link = get_booking_thread_link(
+        booking.get("id", ""),
+        booking.get("plate", ""),
+        booking.get("start_date", "")
+    )
+    source_link = f"<{thread_link}|📋 View Booking Thread>" if thread_link else "📋 Booking thread not found"
+
+    # Post closure to #mkvpickup
     post_msg(CHANNEL_PICKUP, [
         # ── Contract header ───────────────────────────────────────────────────
         {"type":"section","text":{"type":"mrkdwn","text":"✅ *CONTRACT CLOSED*"}},
@@ -198,7 +239,8 @@ def handle_pickup(payload):
         )}},
         {"type":"divider"},
         {"type":"section","text":{"type":"mrkdwn","text":"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"}},
-        {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user}"}]},
+        {"type":"context","elements":[{"type":"mrkdwn",
+            "text":f"Submitted by @{user} | {source_link}"}]},
     ], f"✅ Contract closed: {meta['booking'].get('car','—')} ({meta['booking'].get('plate','—')})")
 
 # ── HTTP Handler ──────────────────────────────────────────────────────────────
