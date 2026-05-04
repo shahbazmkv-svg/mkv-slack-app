@@ -74,18 +74,20 @@ def delivery_modal(b, trigger, ch, ts):
         ]})
 
 def pickup_modal(b, trigger, ch, ts):
+    out_km = b.get("out_km", "—")
+    # Show KM Driven hint if out_km is known
+    km_hint = f"Out KM was {out_km} — KM Driven will be auto-calculated" if out_km != "—" else "Out KM not recorded at delivery"
     open_modal(trigger, {"type":"modal","callback_id":"pickup_submit",
         "private_metadata": json.dumps({"channel":ch,"ts":ts,"booking":b}),
         "title":{"type":"plain_text","text":"Contract Closed"},
         "submit":{"type":"plain_text","text":"Submit"},
         "close":{"type":"plain_text","text":"Cancel"},
         "blocks":[
-            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {b.get('out_km','—')}"}},
+            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {out_km}"}},
             {"type":"divider"},
             {"type":"input","block_id":"in_km","label":{"type":"plain_text","text":"In KM"},
              "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. 12850"}}},
-            {"type":"input","block_id":"extra_km","label":{"type":"plain_text","text":"Extra KM (if any)"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. 350"}}},
+            {"type":"context","elements":[{"type":"mrkdwn","text":f"ℹ️ {km_hint}"}]},
             {"type":"input","block_id":"salik","label":{"type":"plain_text","text":"Salik"},"optional":True,
              "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 50"}}},
             {"type":"input","block_id":"fines","label":{"type":"plain_text","text":"Fines"},"optional":True,
@@ -128,14 +130,28 @@ def handle_delivery(payload):
     ], f"✅ Delivery completed by {user}", meta["ts"])
 
 def handle_pickup(payload):
-    meta  = json.loads(payload["view"]["private_metadata"])
-    state = payload["view"]["state"]
-    user  = payload["user"]["name"]
+    meta    = json.loads(payload["view"]["private_metadata"])
+    state   = payload["view"]["state"]
+    user    = payload["user"]["name"]
+    booking = meta["booking"]
+
+    in_km  = val(state, "in_km").strip()
+    out_km = booking.get("out_km", "—")
+
+    # Auto-calculate KM Driven
+    try:
+        km_driven = int(float(in_km)) - int(float(out_km))
+        km_driven_str = f"{km_driven:,} km" + (" ⚠️ negative — check values" if km_driven < 0 else "")
+    except:
+        km_driven_str = "— (Out KM not recorded)"
+
     post_msg(meta["channel"], [
         {"type":"section","text":{"type":"mrkdwn","text":(
             f"✅ *CONTRACT CLOSED*\n```\n"
-            f"{'In KM':<16}: {val(state,'in_km')}\n"
-            f"{'Extra KM':<16}: {val(state,'extra_km')}\n"
+            f"{'Out KM':<16}: {out_km}\n"
+            f"{'In KM':<16}: {in_km}\n"
+            f"{'KM Driven':<16}: {km_driven_str}\n"
+            f"{'─'*34}\n"
             f"{'Salik':<16}: {val(state,'salik')}\n"
             f"{'Fines':<16}: {val(state,'fines')}\n"
             f"{'Fuel Charge':<16}: {val(state,'fuel_charge')}\n"
