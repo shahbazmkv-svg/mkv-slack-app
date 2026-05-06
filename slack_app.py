@@ -7,22 +7,6 @@ SLACK_BOT_TOKEN      = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 PORT                 = int(os.environ.get("PORT", 3000))
 
-# ── Channel routing ────────────────────────────────────────────────────────────
-# Booking card posts here (existing — unchanged)
-CHANNEL_BOOKINGS  = "C0ABPC606F7"   # #mkv-bookings
-
-# Delivery completions post here — replace with your #mkvdelivery channel ID
-CHANNEL_DELIVERY  = os.environ.get("CHANNEL_DELIVERY", "REPLACE_WITH_MKVDELIVERY_ID")
-
-# Pickup / contract closures post here — replace with your #mkvpickup channel ID
-CHANNEL_PICKUP    = os.environ.get("CHANNEL_PICKUP",   "REPLACE_WITH_MKVPICKUP_ID")
-
-# TEST MODE — set to False in production
-TEST_MODE         = True
-if TEST_MODE:
-    CHANNEL_DELIVERY = "C0AVCCCG0S0"   # #mkvtest
-    CHANNEL_PICKUP   = "C0AVCCCG0S0"   # #mkvtest
-
 HEADERS = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}", "Content-Type": "application/json; charset=utf-8"}
 
 FUEL_OPTIONS = [
@@ -33,35 +17,11 @@ FUEL_OPTIONS = [
     {"text": {"type": "plain_text", "text": "0/4 — Empty"},  "value": "0/4"},
 ]
 
-THREAD_STORE = "booking_thread_store.json"
-SLACK_WORKSPACE = "mkv-luxury"
-
 def slack(endpoint, payload):
     r = requests.post(f"https://slack.com/api/{endpoint}", headers=HEADERS, json=payload, timeout=15)
     res = r.json()
     if not res.get("ok"): print(f"Slack error [{endpoint}]: {res.get('error')}")
     return res
-
-def get_booking_thread_link(contract_id, plate="", start_date=""):
-    """Read booking_thread_store.json and return a Slack link to the original booking thread."""
-    try:
-        with open(THREAD_STORE) as f:
-            store = json.load(f).get("bookings", {})
-        # Try contract ID first
-        entry = store.get(contract_id)
-        if not entry:
-            # Fallback: match by plate + start_date
-            for v in store.values():
-                if v.get("plate") == plate and v.get("start_date") == start_date:
-                    entry = v
-                    break
-        if entry and entry.get("thread_ts"):
-            ts_clean = entry["thread_ts"].replace(".", "")
-            ch = CHANNEL_TEST if TEST_MODE else CHANNEL_BOOKINGS
-            return f"https://{SLACK_WORKSPACE}.slack.com/archives/{ch}/p{ts_clean}"
-    except Exception as e:
-        print(f"Thread store error: {e}")
-    return None
 
 def open_modal(trigger_id, modal): slack("views.open", {"trigger_id": trigger_id, "view": modal})
 
@@ -114,20 +74,18 @@ def delivery_modal(b, trigger, ch, ts):
         ]})
 
 def pickup_modal(b, trigger, ch, ts):
-    out_km = b.get("out_km", "—")
-    # Show KM Driven hint if out_km is known
-    km_hint = f"Out KM was {out_km} — KM Driven will be auto-calculated" if out_km != "—" else "Out KM not recorded at delivery"
     open_modal(trigger, {"type":"modal","callback_id":"pickup_submit",
         "private_metadata": json.dumps({"channel":ch,"ts":ts,"booking":b}),
         "title":{"type":"plain_text","text":"Contract Closed"},
         "submit":{"type":"plain_text","text":"Submit"},
         "close":{"type":"plain_text","text":"Cancel"},
         "blocks":[
-            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {out_km}"}},
+            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {b.get('out_km','—')}"}},
             {"type":"divider"},
             {"type":"input","block_id":"in_km","label":{"type":"plain_text","text":"In KM"},
              "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. 12850"}}},
-            {"type":"context","elements":[{"type":"mrkdwn","text":f"ℹ️ {km_hint}"}]},
+            {"type":"input","block_id":"extra_km","label":{"type":"plain_text","text":"Extra KM (if any)"},"optional":True,
+             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. 350"}}},
             {"type":"input","block_id":"salik","label":{"type":"plain_text","text":"Salik"},"optional":True,
              "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 50"}}},
             {"type":"input","block_id":"fines","label":{"type":"plain_text","text":"Fines"},"optional":True,
@@ -153,25 +111,9 @@ def handle_delivery(payload):
     driver  = val(state, "driver_name")
     out_km  = val(state, "out_km")
     booking.update({"driver": driver, "out_km": out_km})
-
-    # Get link back to original booking thread in #mkv-bookings
-    thread_link = get_booking_thread_link(
-        booking.get("id", ""),
-        booking.get("plate", ""),
-        booking.get("start_date", "")
-    )
-    source_link = f"<{thread_link}|📋 View Booking Thread>" if thread_link else "📋 Booking thread not found"
-
-    # Post delivery result to #mkvdelivery
-    post_msg(CHANNEL_DELIVERY, [
-        {"type":"header","text":{"type":"plain_text","text":"🚗 DELIVERY COMPLETED","emoji":True}},
+    post_msg(meta["channel"], [
         {"type":"section","text":{"type":"mrkdwn","text":(
-            f"*{booking.get('id','—')}* | {booking.get('car','—')} | `{booking.get('plate','—')}`\n"
-            f"*Customer:* {booking.get('customer','—')} | *Date:* {booking.get('date','—')} {booking.get('time','')}"
-        )}},
-        {"type":"divider"},
-        {"type":"section","text":{"type":"mrkdwn","text":(
-            f"```\n"
+            f"✅ *DELIVERY COMPLETED*\n```\n"
             f"{'Driver':<14}: {driver}\n"
             f"{'Out KM':<14}: {out_km}\n"
             f"{'Fuel Level':<14}: {val(state,'fuel_level')}\n"
@@ -180,68 +122,46 @@ def handle_delivery(payload):
         )}},
         {"type":"divider"},
         {"type":"actions","elements":[
-            {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary",
-             "action_id":"open_pickup","value":json.dumps(booking)},
+            {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary","action_id":"open_pickup","value":json.dumps(booking)},
         ]},
-        {"type":"context","elements":[{"type":"mrkdwn",
-            "text":f"Submitted by @{user} | Pickup: PENDING | {source_link}"}]},
-    ], f"✅ Delivery: {booking.get('car','—')} ({booking.get('plate','—')})")
+        {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Pickup: PENDING"}]},
+    ], f"✅ Delivery completed by {user}", meta["ts"])
 
 def handle_pickup(payload):
     meta    = json.loads(payload["view"]["private_metadata"])
     state   = payload["view"]["state"]
     user    = payload["user"]["name"]
-    booking = meta["booking"]
+    booking = meta.get("booking", {})
 
-    in_km  = val(state, "in_km").strip()
-    out_km = booking.get("out_km", "—")
+    in_km_str  = val(state, "in_km").replace(",", "").strip()
+    out_km_str = str(booking.get("out_km", "—")).replace(",", "").strip()
 
-    # Auto-calculate KM Driven
+    # Auto-calculate utilised KM
     try:
-        km_driven = int(float(in_km)) - int(float(out_km))
-        km_driven_str = f"{km_driven:,} km" + (" ⚠️ negative — check values" if km_driven < 0 else "")
+        utilised_km = int(in_km_str) - int(out_km_str)
+        utilised_str = f"{utilised_km:,} KM"
     except:
-        km_driven_str = "— (Out KM not recorded)"
+        utilised_str = "—"
 
-    # Get link back to original booking thread in #mkv-bookings
-    thread_link = get_booking_thread_link(
-        booking.get("id", ""),
-        booking.get("plate", ""),
-        booking.get("start_date", "")
-    )
-    source_link = f"<{thread_link}|📋 View Booking Thread>" if thread_link else "📋 Booking thread not found"
-
-    # Post closure to #mkvpickup
-    post_msg(CHANNEL_PICKUP, [
-        # ── Contract header ───────────────────────────────────────────────────
-        {"type":"section","text":{"type":"mrkdwn","text":"✅ *CONTRACT CLOSED*"}},
-        {"type":"divider"},
-
-        # ── KM Table — 3 columns ──────────────────────────────────────────────
-        {"type":"section","text":{"type":"mrkdwn","text":"*🚗 Odometer Summary*"}},
-        {"type":"section","fields":[
-            {"type":"mrkdwn","text":f"*Out KM*\n_(auto — from delivery)_\n`{out_km}`"},
-            {"type":"mrkdwn","text":f"*In KM*\n_(entered at pickup)_\n`{in_km}`"},
-            {"type":"mrkdwn","text":f"*KM Driven*\n_(auto-calculated)_\n`{km_driven_str}`"},
-        ]},
-        {"type":"divider"},
-
-        # ── Charges summary ───────────────────────────────────────────────────
+    post_msg(meta["channel"], [
         {"type":"section","text":{"type":"mrkdwn","text":(
-            f"*💰 Charges & Closure*\n```\n"
+            f"✅ *CONTRACT CLOSED*\n```\n"
+            f"{'Out KM':<16}: {out_km_str}\n"
+            f"{'In KM':<16}: {in_km_str}\n"
+            f"{'Utilised KM':<16}: {utilised_str}\n"
+            f"{'─' * 34}\n"
+            f"{'Extra KM':<16}: {val(state,'extra_km')}\n"
             f"{'Salik':<16}: {val(state,'salik')}\n"
             f"{'Fines':<16}: {val(state,'fines')}\n"
             f"{'Fuel Charge':<16}: {val(state,'fuel_charge')}\n"
             f"{'Damage':<16}: {val(state,'damage_charges')}\n"
             f"{'Amt Collected':<16}: {val(state,'amount_collected')}\n"
             f"{'Payment Mode':<16}: {val(state,'payment_mode')}\n"
-            f"{'Remarks':<16}: {val(state,'remarks')}\n```"
+            f"{'Remarks':<16}: {val(state,'remarks')}\n```\n"
+            f"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"
         )}},
-        {"type":"divider"},
-        {"type":"section","text":{"type":"mrkdwn","text":"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"}},
-        {"type":"context","elements":[{"type":"mrkdwn",
-            "text":f"Submitted by @{user} | {source_link}"}]},
-    ], f"✅ Contract closed: {meta['booking'].get('car','—')} ({meta['booking'].get('plate','—')})")
+        {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Utilised: {utilised_str}"}]},
+    ], f"✅ Contract closed by {user}", meta["ts"])
 
 # ── HTTP Handler ──────────────────────────────────────────────────────────────
 
@@ -287,21 +207,13 @@ class Handler(BaseHTTPRequestHandler):
         if ptype == "block_actions":
             aid     = payload["actions"][0]["action_id"]
             trigger = payload["trigger_id"]
-            ch      = payload["container"]["channel_id"]   # originating channel
+            ch      = payload["container"]["channel_id"]
             mts     = payload["container"]["message_ts"]
             try: bk = json.loads(payload["actions"][0].get("value", "{}"))
             except: bk = {}
-            print(f"Action: {aid} | from channel: {ch}")
-
-            if aid == "open_delivery":
-                # Always open delivery modal — result posts to CHANNEL_DELIVERY
-                delivery_modal(bk, trigger, CHANNEL_DELIVERY, mts)
-
-            elif aid == "open_pickup":
-                # Always open pickup modal — result posts to CHANNEL_PICKUP
-                # Pass originating booking channel so we can link back to it
-                bk["booking_channel"] = CHANNEL_BOOKINGS
-                pickup_modal(bk, trigger, CHANNEL_PICKUP, mts)
+            print(f"Action: {aid}")
+            if aid == "open_delivery":   delivery_modal(bk, trigger, ch, mts)
+            elif aid == "open_pickup":   pickup_modal(bk, trigger, ch, mts)
 
             self.send_json(200, b"")
 
