@@ -1,375 +1,450 @@
-import os, json, hashlib, hmac, time
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from urllib.parse import parse_qs, unquote_plus
-import requests
+# MKV LUXURY × DUBAI TERMINAL 3
 
-SLACK_BOT_TOKEN      = os.environ.get("SLACK_BOT_TOKEN", "")
-SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
-PORT                 = int(os.environ.get("PORT", 3000))
+## Executive Partnership Presentation Redesign
 
-# Channel IDs
-CHANNEL_BOOKINGS = "C0ABPC606F7"   # #mkv-bookings  — ROOT
-CHANNEL_DELIVERY = "C0ABLDUAZ0B"   # #mkv-delivery  — replace with real ID
-CHANNEL_PICKUP   = "C0ABW979FML"   # #mkv-pickup    — replace with real ID
-SLACK_WORKSPACE  = "mkv-luxury"
+---
 
-HEADERS = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}", "Content-Type": "application/json; charset=utf-8"}
+# DESIGN DIRECTION
 
-FUEL_OPTIONS = [
-    {"text": {"type": "plain_text", "text": "4/4 — Full"},  "value": "4/4"},
-    {"text": {"type": "plain_text", "text": "3/4"},          "value": "3/4"},
-    {"text": {"type": "plain_text", "text": "2/4 — Half"},   "value": "2/4"},
-    {"text": {"type": "plain_text", "text": "1/4"},          "value": "1/4"},
-    {"text": {"type": "plain_text", "text": "0/4 — Empty"},  "value": "0/4"},
-]
+## Presentation Style
 
-PAYMENT_OPTIONS = [
-    {"text": {"type": "plain_text", "text": "Cash"},          "value": "Cash"},
-    {"text": {"type": "plain_text", "text": "Card"},          "value": "Card"},
-    {"text": {"type": "plain_text", "text": "Bank Transfer"}, "value": "Bank Transfer"},
-    {"text": {"type": "plain_text", "text": "Crypto"},        "value": "Crypto"},
-]
+* Cinematic luxury
+* Minimalistic executive aesthetic
+* Large full-screen visuals
+* Dark charcoal, matte black, champagne gold palette
+* Ultra-premium airport campaign feel
+* Emirates First Class / Rolls Royce inspired visual identity
 
-def slack(endpoint, payload):
-    r = requests.post(f"https://slack.com/api/{endpoint}", headers=HEADERS, json=payload, timeout=15)
-    res = r.json()
-    if not res.get("ok"):
-        print(f"Slack error [{endpoint}]: {res.get('error')}")
-    return res
+## Recommended Fonts
 
-def open_modal(trigger_id, modal):
-    slack("views.open", {"trigger_id": trigger_id, "view": modal})
+### Headlines
 
-def post_msg(channel, blocks, text, ts=None):
-    p = {"channel": channel, "text": text, "blocks": blocks}
-    if ts:
-        p["thread_ts"] = ts
-    return slack("chat.postMessage", p)
+* Bebas Neue
+* Alternative: Oswald SemiBold
 
-def thread_link(channel, ts):
-    ts_clean = ts.replace(".", "")
-    return f"https://{SLACK_WORKSPACE}.slack.com/archives/{channel}/p{ts_clean}"
+### Body
 
-def val(state, block_id):
-    try:
-        action = state["values"][block_id]["value"]
-        if isinstance(action, dict):
-            if action.get("value") is not None:
-                return action["value"]
-            if action.get("selected_option"):
-                return action["selected_option"]["value"]
-            if action.get("selected_date"):
-                return action["selected_date"]
-        return str(action) if action else "—"
-    except:
-        return "—"
+* Montserrat
+* Alternative: Avenir Next
 
-def verify(body, ts, sig):
-    try:
-        if abs(time.time() - int(ts)) > 300:
-            return False
-        base = f"v0:{ts}:{body.decode()}"
-        comp = "v0=" + hmac.new(SLACK_SIGNING_SECRET.encode(), base.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(comp, sig)
-    except:
-        return False
+## Visual Rules
 
+* Use edge-to-edge images
+* Avoid boxed image grids
+* Use luxury spacing and breathing room
+* Use subtle gold accents only
+* Minimal paragraphs
+* Large bold statements
+* Add cinematic shadows and reflections
+* Add motion-style compositions
+* Keep text under 25% of each slide
 
-# ─────────────────────────────────────────────
-#  DELIVERY MODAL
-#  Triggered by: 🚗 Delivery button in #mkv-bookings
-#  On submit   : posts confirmed card to #mkv-delivery
-#                with 🔑 Pickup button + thread link to #mkv-bookings
-# ─────────────────────────────────────────────
-def delivery_modal(b, trigger, ch, ts):
-    open_modal(trigger, {
-        "type": "modal",
-        "callback_id": "delivery_submit",
-        "private_metadata": json.dumps({"channel": ch, "ts": ts, "booking": b}),
-        "title":  {"type": "plain_text", "text": "Vehicle Delivered"},
-        "submit": {"type": "plain_text", "text": "Submit"},
-        "close":  {"type": "plain_text", "text": "Cancel"},
-        "blocks": [
-            {"type": "section", "text": {"type": "mrkdwn",
-                "text": f"*{b.get('id','—')}* | {b.get('car','—')} | {b.get('date','—')} {b.get('time','')}"}},
-            {"type": "divider"},
-            {"type": "input", "block_id": "driver_name",
-             "label": {"type": "plain_text", "text": "Driver Name"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. Ahmed"}}},
-            {"type": "input", "block_id": "out_km",
-             "label": {"type": "plain_text", "text": "Out KM"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. 12500"}}},
-            {"type": "input", "block_id": "fuel_level",
-             "label": {"type": "plain_text", "text": "Fuel Level"},
-             "element": {"type": "static_select", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "Select fuel level"},
-                         "options": FUEL_OPTIONS}},
-            {"type": "input", "block_id": "photos_uploaded",
-             "label": {"type": "plain_text", "text": "Photos Uploaded"},
-             "element": {"type": "static_select", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "Select"},
-                         "options": [
-                             {"text": {"type": "plain_text", "text": "Yes"}, "value": "Yes"},
-                             {"text": {"type": "plain_text", "text": "No"},  "value": "No"},
-                         ]}},
-            {"type": "input", "block_id": "remarks", "optional": True,
-             "label": {"type": "plain_text", "text": "Remarks"},
-             "element": {"type": "plain_text_input", "action_id": "value", "multiline": True,
-                         "placeholder": {"type": "plain_text", "text": "Optional"}}},
-        ]
-    })
+---
 
+# SLIDE 1 — COVER
 
-def handle_delivery(payload):
-    """
-    On delivery submit:
-    - Posts delivery confirmed card to #mkv-delivery
-    - Includes 🔑 Pickup button (ONLY button in delivery channel)
-    - Includes thread link back to #mkv-bookings (ROOT)
-    """
-    meta    = json.loads(payload["view"]["private_metadata"])
-    state   = payload["view"]["state"]
-    user    = payload["user"]["name"]
-    booking = meta["booking"]
-    driver  = val(state, "driver_name")
-    out_km  = val(state, "out_km")
+## Headline
 
-    # Update booking dict with delivery details for pickup modal
-    booking.update({"driver": driver, "out_km": out_km})
+REDEFINING ARRIVAL EXCELLENCE
 
-    # Build thread link back to #mkv-bookings (ROOT)
-    booking_ts   = meta.get("ts", "")
-    booking_link = thread_link(CHANNEL_BOOKINGS, booking_ts) if booking_ts else None
-    link_text    = f"<{booking_link}|View Booking Record>" if booking_link else "Booking record unavailable"
+## Subheadline
 
-    pickup_value = json.dumps(booking)
+Strategic Luxury Mobility Partnership Proposal
+for Dubai International Terminal 3
 
-    post_msg(CHANNEL_DELIVERY, [
-        {"type": "header",
-         "text": {"type": "plain_text", "text": "DELIVERY COMPLETED — MKV CAR RENTAL"}},
-        {"type": "context",
-         "elements": [{"type": "mrkdwn",
-             "text": f"AGR#: {booking.get('id','—')} | {booking.get('car','—')} | Delivered: {booking.get('date','—')} {booking.get('time','')}"}]},
-        {"type": "section", "text": {"type": "mrkdwn", "text": (
-            f"```\n"
-            f"{'Driver':<14}: {driver}\n"
-            f"{'Out KM':<14}: {out_km}\n"
-            f"{'Fuel Level':<14}: {val(state, 'fuel_level')}\n"
-            f"{'Photos':<14}: {val(state, 'photos_uploaded')}\n"
-            f"{'Remarks':<14}: {val(state, 'remarks')}\n"
-            f"```"
-        )}},
-        {"type": "divider"},
-        {"type": "actions", "elements": [
-            {
-                "type": "button",
-                "text": {"type": "plain_text", "text": "🔑  Pickup"},
-                "style": "danger",
-                "action_id": "open_pickup",
-                "value": pickup_value
-            }
-        ]},
-        {"type": "context", "elements": [{"type": "mrkdwn",
-            "text": f"Submitted by @{user}  |  Pickup: PENDING  |  {link_text}"}]},
-    ], f"✅ Delivery completed — {booking.get('id','—')} | {booking.get('car','—')}")
+## Visual Direction
 
+* Full-screen Dubai skyline at sunset/night
+* MKV actual fleet positioned outside a luxury airport curbside
+* Hero cars:
 
-# ─────────────────────────────────────────────
-#  PICKUP MODAL
-#  Triggered by: 🔑 Pickup button in #mkv-delivery ONLY
-#  On submit   : posts contract closed to #mkv-pickup
-#                with thread link back to #mkv-bookings (ROOT)
-#                Auto-calculates Utilised KM = In KM - Out KM
-# ─────────────────────────────────────────────
-def pickup_modal(b, trigger, ch, ts):
-    open_modal(trigger, {
-        "type": "modal",
-        "callback_id": "pickup_submit",
-        "private_metadata": json.dumps({"channel": ch, "ts": ts, "booking": b}),
-        "title":  {"type": "plain_text", "text": "Contract Closed"},
-        "submit": {"type": "plain_text", "text": "Submit"},
-        "close":  {"type": "plain_text", "text": "Cancel"},
-        "blocks": [
-            {"type": "section", "text": {"type": "mrkdwn",
-                "text": f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {b.get('out_km','—')}"}},
-            {"type": "divider"},
-            {"type": "input", "block_id": "in_km",
-             "label": {"type": "plain_text", "text": "In KM"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. 12850"}}},
-            {"type": "input", "block_id": "extra_km", "optional": True,
-             "label": {"type": "plain_text", "text": "Extra KM (if any)"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. 350"}}},
-            {"type": "input", "block_id": "salik", "optional": True,
-             "label": {"type": "plain_text", "text": "Salik"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. AED 50"}}},
-            {"type": "input", "block_id": "fines", "optional": True,
-             "label": {"type": "plain_text", "text": "Fines"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. AED 0"}}},
-            {"type": "input", "block_id": "fuel_charge", "optional": True,
-             "label": {"type": "plain_text", "text": "Fuel Charge"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. AED 0"}}},
-            {"type": "input", "block_id": "damage_charges", "optional": True,
-             "label": {"type": "plain_text", "text": "Damage Charges"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. AED 0"}}},
-            {"type": "input", "block_id": "amount_collected",
-             "label": {"type": "plain_text", "text": "Amount Collected"},
-             "element": {"type": "plain_text_input", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "e.g. AED 2,143"}}},
-            {"type": "input", "block_id": "payment_mode",
-             "label": {"type": "plain_text", "text": "Payment Mode"},
-             "element": {"type": "static_select", "action_id": "value",
-                         "placeholder": {"type": "plain_text", "text": "Select"},
-                         "options": PAYMENT_OPTIONS}},
-            {"type": "input", "block_id": "remarks", "optional": True,
-             "label": {"type": "plain_text", "text": "Remarks"},
-             "element": {"type": "plain_text_input", "action_id": "value", "multiline": True,
-                         "placeholder": {"type": "plain_text", "text": "Optional"}}},
-        ]
-    })
+  * Ferrari Purosangue (Black)
+  * McLaren Orange
+  * Morgan Supersport Blue
+  * Lamborghini Urus Yellow
+* Premium cinematic reflections
+* Airport lighting atmosphere
 
+## Footer
 
-def handle_pickup(payload):
-    """
-    On pickup submit:
-    - Auto-calculates Utilised KM = In KM - Out KM
-    - Posts contract closed to #mkv-pickup
-    - Thread link back to #mkv-bookings (ROOT) for full record
-    """
-    meta    = json.loads(payload["view"]["private_metadata"])
-    state   = payload["view"]["state"]
-    user    = payload["user"]["name"]
-    booking = meta.get("booking", {})
+MKV Luxury Car Rental
+Dubai • UAE
 
-    in_km_str  = val(state, "in_km").replace(",", "").strip()
-    out_km_str = str(booking.get("out_km", "—")).replace(",", "").strip()
+---
 
-    # Auto-calculate utilised KM
-    try:
-        utilised_km  = int(in_km_str) - int(out_km_str)
-        utilised_str = f"{utilised_km:,} KM"
-    except:
-        utilised_str = "—"
+# SLIDE 2 — DUBAI TERMINAL 3
 
-    # Thread link back to #mkv-bookings (ROOT) via delivery channel ts
-    delivery_ts   = meta.get("ts", "")
-    delivery_link = thread_link(CHANNEL_DELIVERY, delivery_ts) if delivery_ts else None
-    booking_link  = f"https://{SLACK_WORKSPACE}.slack.com/archives/{CHANNEL_BOOKINGS}"
-    link_text     = f"<{delivery_link}|View Delivery Record>" if delivery_link else "Delivery record unavailable"
+## Headline
 
-    post_msg(CHANNEL_PICKUP, [
-        {"type": "header",
-         "text": {"type": "plain_text", "text": "CONTRACT CLOSED — MKV CAR RENTAL"}},
-        {"type": "context",
-         "elements": [{"type": "mrkdwn",
-             "text": f"AGR#: {booking.get('id','—')} | {booking.get('car','—')} | Driver: {booking.get('driver','—')}"}]},
-        {"type": "section", "text": {"type": "mrkdwn", "text": (
-            f"```\n"
-            f"{'Out KM':<16}: {out_km_str}\n"
-            f"{'In KM':<16}: {in_km_str}\n"
-            f"{'Utilised KM':<16}: {utilised_str}\n"
-            f"{'─' * 34}\n"
-            f"{'Extra KM':<16}: {val(state, 'extra_km')}\n"
-            f"{'Salik':<16}: {val(state, 'salik')}\n"
-            f"{'Fines':<16}: {val(state, 'fines')}\n"
-            f"{'Fuel Charge':<16}: {val(state, 'fuel_charge')}\n"
-            f"{'Damage':<16}: {val(state, 'damage_charges')}\n"
-            f"{'Amt Collected':<16}: {val(state, 'amount_collected')}\n"
-            f"{'Payment Mode':<16}: {val(state, 'payment_mode')}\n"
-            f"{'Remarks':<16}: {val(state, 'remarks')}\n"
-            f"```\n"
-            f"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"
-        )}},
-        {"type": "divider"},
-        {"type": "context", "elements": [{"type": "mrkdwn",
-            "text": f"Submitted by @{user}  |  Utilised: {utilised_str}  |  {link_text}  |  <{booking_link}|Booking Root>"}]},
-    ], f"✅ Contract closed — {booking.get('id','—')} | {booking.get('car','—')} | Utilised: {utilised_str}")
+The World’s Most Prestigious Arrival Gateway
 
+## Main Statement
 
-# ─────────────────────────────────────────────
-#  HTTP HANDLER
-# ─────────────────────────────────────────────
-class Handler(BaseHTTPRequestHandler):
-    def log_message(self, f, *a):
-        print(f"[{self.address_string()}] {f % a}")
+Dubai International Terminal 3 represents one of the world’s most recognized luxury arrival destinations — welcoming premium global travelers, first-class passengers, luxury tourists, and high-net-worth visitors from across the world.
 
-    def send_json(self, code=200, body=b""):
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(body)
+## Supporting Points
 
-    def do_GET(self):
-        print(f"GET {self.path}")
-        self.send_json(200, b'{"status":"ok","service":"MKV Slack App"}')
+* Emirates premium traveler ecosystem
+* Ultra-high-net-worth passenger demographic
+* Global tourism visibility
+* Iconic first impression opportunity
 
-    def do_POST(self):
-        n    = int(self.headers.get("Content-Length", 0))
-        body = self.rfile.read(n)
-        ts   = self.headers.get("X-Slack-Request-Timestamp", "0")
-        sig  = self.headers.get("X-Slack-Signature", "")
-        print(f"POST {self.path} [{n} bytes]")
+## Visual Direction
 
-        # URL verification challenge
-        try:
-            jb = json.loads(body.decode())
-            if jb.get("type") == "url_verification":
-                print("URL verification OK")
-                self.send_json(200, json.dumps({"challenge": jb["challenge"]}).encode())
-                return
-        except:
-            pass
+* Cinematic Terminal 3 visuals
+* Luxury traveler silhouettes
+* Emirates-style premium atmosphere
+* Gold ambient lighting
 
-        if not verify(body, ts, sig):
-            print("Signature verification failed")
-            self.send_json(401, b'{"error":"invalid_signature"}')
-            return
+## Suggested Overlay Quote
 
-        raw     = parse_qs(body.decode())
-        payload = json.loads(unquote_plus(raw.get("payload", ["{}"])[0]))
-        ptype   = payload.get("type")
-        print(f"Type: {ptype}")
+“Dubai deserves an arrival experience as iconic as its global reputation.”
 
-        if ptype == "block_actions":
-            aid     = payload["actions"][0]["action_id"]
-            trigger = payload["trigger_id"]
-            ch      = payload["container"]["channel_id"]
-            mts     = payload["container"]["message_ts"]
-            try:
-                bk = json.loads(payload["actions"][0].get("value", "{}"))
-            except:
-                bk = {}
-            print(f"Action: {aid}")
+---
 
-            if aid == "open_delivery":
-                delivery_modal(bk, trigger, ch, mts)
-            elif aid == "open_pickup":
-                pickup_modal(bk, trigger, ch, mts)
+# SLIDE 3 — THE OPPORTUNITY
 
-            self.send_json(200, b"")
+## Headline
 
-        elif ptype == "view_submission":
-            cb = payload["view"]["callback_id"]
-            print(f"Submit: {cb}")
+Transforming Arrivals Into Experiences
 
-            if cb == "delivery_submit":
-                handle_delivery(payload)
-            elif cb == "pickup_submit":
-                handle_pickup(payload)
+## Main Copy
 
-            self.send_json(200, b'{"response_action":"clear"}')
+The modern luxury traveler seeks more than transportation.
+They seek emotion, exclusivity, prestige, and unforgettable moments from the second they land.
 
-        else:
-            self.send_json(200, b"")
+MKV Luxury proposes a strategic partnership that transforms Terminal 3 arrivals into a cinematic luxury experience.
 
+## Key Highlights
 
-if __name__ == "__main__":
-    print(f"MKV Slack App starting on 0.0.0.0:{PORT}")
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+* Exotic supercar arrival experiences
+* VIP pickup activations
+* Luxury tourism enhancement
+* Social-media-driven destination branding
+* Elevated passenger engagement
+
+## Visual Direction
+
+* Passenger walking toward exotic cars
+* Luxury concierge visual
+* Warm cinematic lighting
+* Motion blur airport atmosphere
+
+---
+
+# SLIDE 4 — MKV LUXURY POSITIONING
+
+## Headline
+
+Dubai’s Curated Exotic Mobility Brand
+
+## Brand Statement
+
+MKV Luxury delivers premium automotive experiences curated for Dubai’s global luxury audience.
+
+## Core Positioning
+
+* Exotic & luxury fleet
+* Concierge-level service
+* Airport delivery specialists
+* Premium customer experience
+* High-end tourism alignment
+
+## Statistics
+
+### 100+
+
+Curated Exotic & Luxury Vehicles
+
+### 4+
+
+Years of Premium Client Experience
+
+### 24/7
+
+Luxury Concierge Support
+
+## Visual Direction
+
+* Matte black luxury background
+* Gold typography
+* Hero image of Purosangue or Cullinan
+* Minimal stat cards
+
+---
+
+# SLIDE 5 — CURATED EXOTIC FLEET
+
+## Headline
+
+An Iconic Fleet Designed to Reflect Dubai
+
+## Featured Fleet
+
+* Ferrari Purosangue
+* McLaren Supercar Collection
+* Rolls Royce Cullinan
+* Lamborghini Urus
+* Porsche GT4 RS
+* Bentley Bentayga Mansory
+* Mercedes AMG G63 Retro
+* Morgan Supersport
+
+## Main Statement
+
+Each vehicle is selected to create memorable arrival moments aligned with Dubai’s luxury image.
+
+## Visual Direction
+
+* Full-width cinematic compositions
+* 1 hero car large
+* Supporting vehicles smaller
+* Use reflections and airport lighting
+* Minimal text
+
+---
+
+# SLIDE 6 — PASSENGER EXPERIENCE JOURNEY
+
+## Headline
+
+A Seamless Luxury Arrival Journey
+
+## Journey Flow
+
+### Arrival
+
+Passenger exits Terminal 3
+
+### Concierge Greeting
+
+Premium MKV representative assistance
+
+### Exotic Vehicle Reveal
+
+Curated supercar handover experience
+
+### Social Media Moment
+
+Luxury visual engagement opportunity
+
+### Dubai Arrival Experience
+
+Direct transition into Dubai luxury lifestyle
+
+## Visual Direction
+
+* Timeline design
+* Airport-to-supercar cinematic visuals
+* Luxury lifestyle imagery
+* Minimal copy
+
+---
+
+# SLIDE 7 — TERMINAL 3 ACTIVATION CONCEPTS
+
+## Headline
+
+Strategic Activation Opportunities
+
+## Activation Areas
+
+### VIP Arrival Zone
+
+Luxury supercar positioning at pickup lanes
+
+### Premium Display Area
+
+Static showcase vehicles within premium arrival sections
+
+### Luxury Concierge Counter
+
+MKV branded guest assistance point
+
+### Social Media Activation Zone
+
+High-visibility photo opportunity areas
+
+## Visual Direction
+
+* Rendered mockups
+* Terminal 3 integrated visuals
+* Luxury curbside concepts
+* Premium lighting
+
+---
+
+# SLIDE 8 — STRATEGIC VALUE TO DUBAI AIRPORTS
+
+## Headline
+
+Elevating Dubai’s Global Luxury Positioning
+
+## Strategic Benefits
+
+### Enhanced Passenger Experience
+
+Creates unforgettable first impressions
+
+### Luxury Tourism Enhancement
+
+Strengthens Dubai’s premium destination branding
+
+### Social Media Visibility
+
+High-value visual content generation from travelers
+
+### Commercial Partnership Potential
+
+Revenue opportunities through premium mobility integration
+
+### Destination Branding
+
+Aligns with Dubai’s global luxury ecosystem
+
+## Visual Direction
+
+* Elegant infographic layout
+* Minimal icons
+* Gold-accented premium graphics
+
+---
+
+# SLIDE 9 — DIGITAL & SOCIAL IMPACT
+
+## Headline
+
+Designed for the Social Media Era
+
+## Main Copy
+
+Exotic supercars positioned at one of the world’s busiest luxury airports create highly shareable moments that organically amplify Dubai’s premium image globally.
+
+## Suggested Metrics
+
+* Instagram engagement
+* Google reviews
+* International traveler visibility
+* Tourism-driven exposure
+
+## Visual Direction
+
+* Luxury influencer aesthetic
+* Social media mockups
+* Airport curbside photography
+* Premium content feel
+
+---
+
+# SLIDE 10 — OPERATIONAL EXCELLENCE
+
+## Headline
+
+A Premium Concierge-Level Operation
+
+## Operational Capabilities
+
+* Complimentary airport delivery & pickup
+* 24/7 support operations
+* VIP customer handling
+* Fleet readiness management
+* Professional handover protocols
+* Multilingual guest coordination
+
+## Main Statement
+
+MKV Luxury combines operational efficiency with elevated hospitality standards tailored for premium travelers.
+
+## Visual Direction
+
+* Concierge visuals
+* Premium service moments
+* Clean luxury layouts
+
+---
+
+# SLIDE 11 — THE PARTNERSHIP VISION
+
+## Headline
+
+A New Standard for Luxury Arrivals
+
+## Main Statement
+
+Together, Dubai Terminal 3 and MKV Luxury can redefine the airport arrival experience — transforming mobility into a symbol of Dubai’s luxury identity.
+
+## Supporting Copy
+
+An iconic partnership designed to elevate prestige, passenger engagement, and global luxury perception.
+
+## Visual Direction
+
+* Sunset/night airport visual
+* Hero lineup of MKV vehicles
+* Elegant cinematic atmosphere
+
+---
+
+# SLIDE 12 — CLOSING
+
+## Headline
+
+Let’s Create Something Extraordinary Together
+
+## Closing Statement
+
+We welcome the opportunity to collaborate with Dubai Airports in creating one of the world’s most iconic luxury arrival experiences.
+
+## Contact Information
+
+MKV Luxury Car Rental
+Dubai • UAE
+
+Website:
+[www.mkvluxury.com](http://www.mkvluxury.com)
+
+Email:
+[contact@mkvluxury.com](mailto:contact@mkvluxury.com)
+
+## Visual Direction
+
+* Minimalistic luxury closing slide
+* Large cinematic hero vehicle
+* Matte black background
+* Soft gold lighting
+* Elegant spacing
+
+---
+
+# FINAL EXECUTIVE RECOMMENDATIONS
+
+## Use Real Airport Mockups
+
+The strongest upgrade will come from realistic Terminal 3 integration visuals.
+
+## Reduce Text Density
+
+Luxury presentations sell through emotion and visuals.
+
+## Maintain Consistent Typography
+
+Avoid multiple decorative fonts.
+
+## Focus on Storytelling
+
+This is not a car rental presentation.
+This is a luxury airport experience proposal.
+
+## Target Emotional Positioning
+
+The presentation should make stakeholders visualize:
+
+* prestige
+* exclusivity
+* media visibility
+* premium tourism enhancement
+* global luxury branding
+
+## Desired Final Feel
+
+“Emirates First Class meets Exotic Automotive Luxury.”
