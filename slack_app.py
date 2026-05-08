@@ -1,4 +1,4 @@
-import os, json, hashlib, hmac, time
+import os, json, hashlib, hmac, time, threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import parse_qs, unquote_plus
 from datetime import datetime, timezone, timedelta
@@ -11,6 +11,10 @@ def gcc_now():
 SLACK_BOT_TOKEN      = os.environ.get("SLACK_BOT_TOKEN", "")
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 PORT                 = int(os.environ.get("PORT", 3000))
+
+CHANNEL_BOOKINGS = "C0ABPC606F7"   # #mkv-bookings  (ROOT)
+CHANNEL_DELIVERY = "C0ACB9C8J01"   # #mkv-delivery
+CHANNEL_PICKUP   = "C0ABW979FML"   # #mkv-car-pickup
 
 HEADERS = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}", "Content-Type": "application/json; charset=utf-8"}
 
@@ -55,6 +59,8 @@ def verify(body, ts, sig):
         comp = "v0=" + hmac.new(SLACK_SIGNING_SECRET.encode(), base.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(comp, sig)
     except: return False
+
+# ── MODALS ────────────────────────────────────────────────────────────────────
 
 def delivery_modal(b, trigger, ch, ts):
     open_modal(trigger, {"type":"modal","callback_id":"delivery_submit",
@@ -112,53 +118,74 @@ def pickup_modal(b, trigger, ch, ts):
              "element":{"type":"plain_text_input","action_id":"value","multiline":True,"placeholder":{"type":"plain_text","text":"Optional"}}},
         ]})
 
+# ── HANDLERS ─────────────────────────────────────────────────────────────────
+
 def handle_delivery(payload):
-    meta    = json.loads(payload["view"]["private_metadata"])
-    state   = payload["view"]["state"]
-    user    = payload["user"]["name"]
-    booking = meta["booking"]
-    driver        = val(state, "driver_name")
-    out_km        = val(state, "out_km")
-    delivery_time = val(state, "delivery_time")
-    booking.update({"driver": driver, "out_km": out_km, "delivery_time": delivery_time})
-    post_msg(meta["channel"], [
-        {"type":"section","text":{"type":"mrkdwn","text":(
-            f"✅ *DELIVERY COMPLETED*\n```\n"
-            f"{'Driver':<14}: {driver}\n"
-            f"{'Delivery Time':<14}: {delivery_time}\n"
-            f"{'Out KM':<14}: {out_km}\n"
-            f"{'Fuel Level':<14}: {val(state,'fuel_level')}\n"
-            f"{'Photos':<14}: {val(state,'photos_uploaded')}\n"
-            f"{'Remarks':<14}: {val(state,'remarks')}\n```"
-        )}},
-        {"type":"divider"},
-        {"type":"actions","elements":[
-            {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary","action_id":"open_pickup","value":json.dumps(booking)},
-        ]},
-        {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Pickup: PENDING"}]},
-    ], f"✅ Delivery completed by {user}", meta["ts"])
+    try:
+        meta          = json.loads(payload["view"]["private_metadata"])
+        state         = payload["view"]["state"]
+        user          = payload["user"]["name"]
+        booking       = meta["booking"]
+        driver        = val(state, "driver_name")
+        out_km        = val(state, "out_km")
+        delivery_time = val(state, "delivery_time")
+        booking.update({"driver": driver, "out_km": out_km, "delivery_time": delivery_time})
+        print(f"handle_delivery: {booking.get('id','—')} → {meta['channel']}")
+        post_msg(meta["channel"], [
+            {"type":"section","text":{"type":"mrkdwn","text":(
+                f"✅ *DELIVERY COMPLETED*\n```\n"
+                f"{'Driver':<14}: {driver}\n"
+                f"{'Delivery Time':<14}: {delivery_time}\n"
+                f"{'Out KM':<14}: {out_km}\n"
+                f"{'Fuel Level':<14}: {val(state,'fuel_level')}\n"
+                f"{'Photos':<14}: {val(state,'photos_uploaded')}\n"
+                f"{'Remarks':<14}: {val(state,'remarks')}\n```"
+            )}},
+            {"type":"divider"},
+            {"type":"actions","elements":[
+                {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary","action_id":"open_pickup","value":json.dumps(booking)},
+            ]},
+            {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Pickup: PENDING"}]},
+        ], f"✅ Delivery completed by {user}", meta["ts"])
+        print(f"handle_delivery: posted OK")
+    except Exception as e:
+        print(f"handle_delivery ERROR: {e}")
+        import traceback; traceback.print_exc()
 
 def handle_pickup(payload):
-    meta  = json.loads(payload["view"]["private_metadata"])
-    state = payload["view"]["state"]
-    user  = payload["user"]["name"]
-    post_msg(meta["channel"], [
-        {"type":"section","text":{"type":"mrkdwn","text":(
-            f"✅ *CONTRACT CLOSED*\n```\n"
-            f"{'In KM':<16}: {val(state,'in_km')}\n"
-            f"{'In Time':<16}: {val(state,'in_time')}\n"
-            f"{'Extra KM':<16}: {val(state,'extra_km')}\n"
-            f"{'Salik':<16}: {val(state,'salik')}\n"
-            f"{'Fines':<16}: {val(state,'fines')}\n"
-            f"{'Fuel Charge':<16}: {val(state,'fuel_charge')}\n"
-            f"{'Damage':<16}: {val(state,'damage_charges')}\n"
-            f"{'Amt Collected':<16}: {val(state,'amount_collected')}\n"
-            f"{'Payment Mode':<16}: {val(state,'payment_mode')}\n"
-            f"{'Remarks':<16}: {val(state,'remarks')}\n```\n"
-            f"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"
-        )}},
-        {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user}"}]},
-    ], f"✅ Contract closed by {user}", meta["ts"])
+    try:
+        meta    = json.loads(payload["view"]["private_metadata"])
+        state   = payload["view"]["state"]
+        user    = payload["user"]["name"]
+        booking = meta.get("booking", {})
+        print(f"handle_pickup: {booking.get('id','—')} → CHANNEL_PICKUP {CHANNEL_PICKUP}")
+        post_msg(CHANNEL_PICKUP, [
+            {"type":"section","text":{"type":"mrkdwn","text":(
+                f"✅ *CONTRACT CLOSED*\n```\n"
+                f"{'AGR#':<16}: {booking.get('id','—')}\n"
+                f"{'Car':<16}: {booking.get('car','—')}\n"
+                f"{'Driver':<16}: {booking.get('driver','—')}\n"
+                f"{'Out KM':<16}: {booking.get('out_km','—')}\n"
+                f"{'Delivered At':<16}: {booking.get('delivery_time','—')}\n"
+                f"{'─'*34}\n"
+                f"{'In KM':<16}: {val(state,'in_km')}\n"
+                f"{'In Time':<16}: {val(state,'in_time')}\n"
+                f"{'Extra KM':<16}: {val(state,'extra_km')}\n"
+                f"{'Salik':<16}: {val(state,'salik')}\n"
+                f"{'Fines':<16}: {val(state,'fines')}\n"
+                f"{'Fuel Charge':<16}: {val(state,'fuel_charge')}\n"
+                f"{'Damage':<16}: {val(state,'damage_charges')}\n"
+                f"{'Amt Collected':<16}: {val(state,'amount_collected')}\n"
+                f"{'Payment Mode':<16}: {val(state,'payment_mode')}\n"
+                f"{'Remarks':<16}: {val(state,'remarks')}\n```\n"
+                f"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"
+            )}},
+            {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user}"}]},
+        ], f"✅ Contract closed by {user}")
+        print(f"handle_pickup: posted OK to {CHANNEL_PICKUP}")
+    except Exception as e:
+        print(f"handle_pickup ERROR: {e}")
+        import traceback; traceback.print_exc()
 
 # ── HTTP Handler ──────────────────────────────────────────────────────────────
 
@@ -211,16 +238,18 @@ class Handler(BaseHTTPRequestHandler):
             print(f"Action: {aid}")
             if aid == "open_delivery":   delivery_modal(bk, trigger, ch, mts)
             elif aid == "open_pickup":   pickup_modal(bk, trigger, ch, mts)
-
             self.send_json(200, b"")
 
         elif ptype == "view_submission":
             cb = payload["view"]["callback_id"]
             print(f"Submit: {cb}")
-            if cb == "delivery_submit":   handle_delivery(payload)
-            elif cb == "pickup_submit":   handle_pickup(payload)
-
+            # ── Respond to Slack immediately (must be within 3 seconds) ──
             self.send_json(200, b'{"response_action":"clear"}')
+            # ── Post to Slack in background so we never breach the timeout ──
+            if cb == "delivery_submit":
+                threading.Thread(target=handle_delivery, args=(payload,), daemon=True).start()
+            elif cb == "pickup_submit":
+                threading.Thread(target=handle_pickup, args=(payload,), daemon=True).start()
         else:
             self.send_json(200, b"")
 
