@@ -99,8 +99,6 @@ def pickup_modal(b, trigger, ch, ts):
              "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. 12850"}}},
             {"type":"input","block_id":"in_time","label":{"type":"plain_text","text":"In Time (GCC 24h)"},
              "element":{"type":"plain_text_input","action_id":"value","initial_value":gcc_now(),"placeholder":{"type":"plain_text","text":"e.g. 18:45"}}},
-            {"type":"input","block_id":"extra_km","label":{"type":"plain_text","text":"Extra KM (if any)"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. 350"}}},
             {"type":"input","block_id":"salik","label":{"type":"plain_text","text":"Salik"},"optional":True,
              "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 50"}}},
             {"type":"input","block_id":"fines","label":{"type":"plain_text","text":"Fines"},"optional":True,
@@ -130,10 +128,12 @@ def handle_delivery(payload):
         out_km        = val(state, "out_km")
         delivery_time = val(state, "delivery_time")
         booking.update({"driver": driver, "out_km": out_km, "delivery_time": delivery_time})
-        print(f"handle_delivery: {booking.get('id','—')} → {meta['channel']}")
-        post_msg(meta["channel"], [
+        print(f"handle_delivery: {booking.get('id','—')} → CHANNEL_DELIVERY {CHANNEL_DELIVERY}")
+        post_msg(CHANNEL_DELIVERY, [
             {"type":"section","text":{"type":"mrkdwn","text":(
                 f"✅ *DELIVERY COMPLETED*\n```\n"
+                f"{'AGR#':<14}: {booking.get('id','—')}\n"
+                f"{'Car':<14}: {booking.get('car','—')}\n"
                 f"{'Driver':<14}: {driver}\n"
                 f"{'Delivery Time':<14}: {delivery_time}\n"
                 f"{'Out KM':<14}: {out_km}\n"
@@ -146,8 +146,8 @@ def handle_delivery(payload):
                 {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary","action_id":"open_pickup","value":json.dumps(booking)},
             ]},
             {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Pickup: PENDING"}]},
-        ], f"✅ Delivery completed by {user}", meta["ts"])
-        print(f"handle_delivery: posted OK")
+        ], f"✅ Delivery completed by {user}")
+        print(f"handle_delivery: posted OK to CHANNEL_DELIVERY")
     except Exception as e:
         print(f"handle_delivery ERROR: {e}")
         import traceback; traceback.print_exc()
@@ -158,6 +158,16 @@ def handle_pickup(payload):
         state   = payload["view"]["state"]
         user    = payload["user"]["name"]
         booking = meta.get("booking", {})
+
+        # Auto-calculate driven KM
+        in_km_str  = val(state, "in_km")
+        out_km_str = booking.get("out_km", "—")
+        try:
+            driven_km = int(in_km_str) - int(out_km_str)
+            driven_str = f"{driven_km} KM"
+        except:
+            driven_str = "—"
+
         print(f"handle_pickup: {booking.get('id','—')} → CHANNEL_PICKUP {CHANNEL_PICKUP}")
         post_msg(CHANNEL_PICKUP, [
             {"type":"section","text":{"type":"mrkdwn","text":(
@@ -165,12 +175,13 @@ def handle_pickup(payload):
                 f"{'AGR#':<16}: {booking.get('id','—')}\n"
                 f"{'Car':<16}: {booking.get('car','—')}\n"
                 f"{'Driver':<16}: {booking.get('driver','—')}\n"
-                f"{'Out KM':<16}: {booking.get('out_km','—')}\n"
-                f"{'Delivered At':<16}: {booking.get('delivery_time','—')}\n"
                 f"{'─'*34}\n"
-                f"{'In KM':<16}: {val(state,'in_km')}\n"
+                f"{'Out KM':<16}: {out_km_str}\n"
+                f"{'Delivered At':<16}: {booking.get('delivery_time','—')}\n"
+                f"{'In KM':<16}: {in_km_str}\n"
                 f"{'In Time':<16}: {val(state,'in_time')}\n"
-                f"{'Extra KM':<16}: {val(state,'extra_km')}\n"
+                f"{'KM Driven':<16}: {driven_str}\n"
+                f"{'─'*34}\n"
                 f"{'Salik':<16}: {val(state,'salik')}\n"
                 f"{'Fines':<16}: {val(state,'fines')}\n"
                 f"{'Fuel Charge':<16}: {val(state,'fuel_charge')}\n"
