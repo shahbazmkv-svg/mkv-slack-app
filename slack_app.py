@@ -41,15 +41,17 @@ def post_msg(channel, blocks, text, ts=None):
 
 def val(state, block_id):
     try:
-        action = state["values"][block_id]["value"]
-        if isinstance(action, dict):
-            if action.get("value") is not None:
-                return action["value"]
-            if action.get("selected_option"):
-                return action["selected_option"]["value"]
-            if action.get("selected_date"):
-                return action["selected_date"]
-        return str(action) if action else "—"
+        block = state["values"][block_id]
+        # Try all action keys in the block
+        for action_id, action in block.items():
+            if isinstance(action, dict):
+                if action.get("value") is not None:
+                    return str(action["value"])
+                if action.get("selected_option"):
+                    return action["selected_option"]["value"]
+                if action.get("selected_date"):
+                    return action["selected_date"]
+        return "—"
     except: return "—"
 
 def verify(body, ts, sig):
