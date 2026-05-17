@@ -1,5 +1,5 @@
 import os, json, hashlib, hmac, time, threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote_plus
 from datetime import datetime, timezone, timedelta
 import requests
@@ -206,8 +206,10 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, code=200, body=b""):
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+        self.wfile.flush()
 
     def do_GET(self):
         print(f"GET {self.path}")
@@ -266,4 +268,4 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     print(f"MKV Slack App starting on 0.0.0.0:{PORT}")
-    HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
