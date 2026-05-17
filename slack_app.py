@@ -13,7 +13,7 @@ SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET", "")
 PORT                 = int(os.environ.get("PORT", 3000))
 
 CHANNEL_BOOKINGS = "C0ABPC606F7"   # #mkv-bookings  (ROOT)
-CHANNEL_DELIVERY = "C0ACB9C8J01"   # #mkv-delivery
+CHANNEL_DELIVERY = "C0ABLDUAZ0B"   # #mkv-delivery
 CHANNEL_PICKUP   = "C0ABW979FML"   # #mkv-car-pickup
 
 HEADERS = {"Authorization": f"Bearer {SLACK_BOT_TOKEN}", "Content-Type": "application/json; charset=utf-8"}
