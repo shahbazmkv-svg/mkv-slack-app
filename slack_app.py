@@ -87,16 +87,19 @@ def delivery_modal(b, trigger, ch, ts):
         ]})
 
 def pickup_modal(b, trigger, ch, ts):
+    out_km = b.get("out_km", "—")
     open_modal(trigger, {"type":"modal","callback_id":"pickup_submit",
         "private_metadata": json.dumps({"channel":ch,"ts":ts,"booking":b}),
         "title":{"type":"plain_text","text":"Contract Closed"},
         "submit":{"type":"plain_text","text":"Submit"},
         "close":{"type":"plain_text","text":"Cancel"},
         "blocks":[
-            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {b.get('out_km','—')} | Delivered: {b.get('delivery_time','—')}"}},
+            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {out_km} | Delivered: {b.get('delivery_time','—')}"}},
             {"type":"divider"},
             {"type":"input","block_id":"in_km","label":{"type":"plain_text","text":"In KM"},
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. 12850"}}},
+             "dispatch_action": True,
+             "element":{"type":"plain_text_input","action_id":"in_km_entered","dispatch_action_config":{"trigger_actions_on":["on_character_entered"]},"placeholder":{"type":"plain_text","text":"e.g. 12850"}}},
+            {"type":"section","block_id":"km_driven_display","text":{"type":"mrkdwn","text":f"*KM Driven:* — _(auto-calculated)_"}},
             {"type":"input","block_id":"in_time","label":{"type":"plain_text","text":"In Time (GCC 24h)"},
              "element":{"type":"plain_text_input","action_id":"value","initial_value":gcc_now(),"placeholder":{"type":"plain_text","text":"e.g. 18:45"}}},
             {"type":"input","block_id":"salik","label":{"type":"plain_text","text":"Salik"},"optional":True,
@@ -145,7 +148,7 @@ def handle_delivery(payload):
             {"type":"actions","elements":[
                 {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary","action_id":"open_pickup","value":json.dumps(booking)},
             ]},
-            {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Pickup: PENDING"}]},
+            {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Pickup: PENDING | <#{CHANNEL_BOOKINGS}> booking thread: {meta.get('ts','')}"}]},
         ], f"✅ Delivery completed by {user}")
         print(f"handle_delivery: posted OK to CHANNEL_DELIVERY")
     except Exception as e:
@@ -249,8 +252,49 @@ class Handler(BaseHTTPRequestHandler):
             try: bk = json.loads(payload["actions"][0].get("value", "{}"))
             except: bk = {}
             print(f"Action: {aid}")
-            if aid == "open_delivery":   delivery_modal(bk, trigger, ch, mts)
-            elif aid == "open_pickup":   pickup_modal(bk, trigger, ch, mts)
+
+            if aid == "open_delivery":
+                delivery_modal(bk, trigger, ch, mts)
+
+            elif aid == "open_pickup":
+                pickup_modal(bk, trigger, ch, mts)
+
+            elif aid == "in_km_entered":
+                # Live KM Driven calculation — update modal
+                try:
+                    meta    = json.loads(payload["view"]["private_metadata"])
+                    booking = meta.get("booking", {})
+                    out_km  = booking.get("out_km", "—")
+                    in_km   = payload["actions"][0].get("value", "")
+                    try:
+                        driven = int(in_km) - int(out_km)
+                        km_text = f"*KM Driven:* {driven} KM"
+                    except:
+                        km_text = f"*KM Driven:* — _(enter In KM above)_"
+
+                    # Rebuild blocks with updated km_driven_display
+                    blocks = payload["view"]["blocks"]
+                    for block in blocks:
+                        if block.get("block_id") == "km_driven_display":
+                            block["text"]["text"] = km_text
+                            break
+
+                    slack("views.update", {
+                        "view_id": payload["view"]["id"],
+                        "hash":    payload["view"]["hash"],
+                        "view": {
+                            "type":             "modal",
+                            "callback_id":      "pickup_submit",
+                            "private_metadata": payload["view"]["private_metadata"],
+                            "title":            payload["view"]["title"],
+                            "submit":           payload["view"]["submit"],
+                            "close":            payload["view"]["close"],
+                            "blocks":           blocks,
+                        }
+                    })
+                except Exception as e:
+                    print(f"views.update ERROR: {e}")
+
             self.send_json(200, b"")
 
         elif ptype == "view_submission":
