@@ -36,6 +36,7 @@ def open_modal(trigger_id, modal): slack("views.open", {"trigger_id": trigger_id
 
 def post_msg(channel, blocks, text, ts=None):
     p = {"channel": channel, "text": text, "blocks": blocks}
+         "unfurl_links": False, "unfurl_media": False}
     if ts: p["thread_ts"] = ts
     slack("chat.postMessage", p)
 
