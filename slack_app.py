@@ -57,11 +57,17 @@ def val(state, block_id):
 
 def verify(body, ts, sig):
     try:
-        if abs(time.time() - int(ts)) > 300: return False
+        if abs(time.time() - int(ts)) > 300:
+            print(f"verify FAILED: timestamp too old — now={int(time.time())} ts={ts}")
+            return False
         base = f"v0:{ts}:{body.decode()}"
         comp = "v0=" + hmac.new(SLACK_SIGNING_SECRET.encode(), base.encode(), hashlib.sha256).hexdigest()
-        return hmac.compare_digest(comp, sig)
-    except: return False
+        result = hmac.compare_digest(comp, sig)
+        print(f"verify: {'OK' if result else 'FAILED'} | sig={sig[:20]}... | comp={comp[:20]}...")
+        return result
+    except Exception as e:
+        print(f"verify ERROR: {e}")
+        return False
 
 # ── MODALS ────────────────────────────────────────────────────────────────────
 def delivery_modal(b, trigger, ch, ts):
