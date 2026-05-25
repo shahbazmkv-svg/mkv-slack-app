@@ -310,7 +310,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self.rfile.read(n)
         ts   = self.headers.get("X-Slack-Request-Timestamp", "0")
         sig  = self.headers.get("X-Slack-Signature", "")
-        print(f"POST {self.path} [{n} bytes]")
+        print(f"POST {self.path} [{n} bytes] ts={ts} sig={sig[:20] if sig else 'NONE'}...")
 
         try:
             jb = json.loads(body.decode())
