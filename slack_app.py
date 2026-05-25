@@ -56,8 +56,19 @@ def val(state, block_id):
     except: return "—"
 
 def verify(body, ts, sig):
-    print(f"verify called: ts={ts} sig={sig[:20] if sig else 'NONE'}...")
-    return True  # TEMP: bypass for testing
+    try:
+        if abs(time.time() - int(ts)) > 300:
+            print(f"verify FAILED: timestamp too old")
+            return False
+        base = f"v0:{ts}:{body.decode()}"
+        comp = "v0=" + hmac.new(SLACK_SIGNING_SECRET.encode(), base.encode(), hashlib.sha256).hexdigest()
+        result = hmac.compare_digest(comp, sig)
+        if not result:
+            print(f"verify FAILED: signature mismatch")
+        return result
+    except Exception as e:
+        print(f"verify ERROR: {e}")
+        return False
 
 # ── MODALS ────────────────────────────────────────────────────────────────────
 def delivery_modal(b, trigger, ch, ts):
