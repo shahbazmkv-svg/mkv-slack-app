@@ -1,11 +1,11 @@
 import os, json, hashlib, hmac, time, threading
-from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote_plus
 from datetime import datetime, timezone, timedelta
 import requests
 
+# ── CONFIG ────────────────────────────────────────────────────────────────────
 def gcc_now():
-    """Return current GCC time (UTC+4) in HH:MM 24-hour format."""
     return datetime.now(timezone(timedelta(hours=4))).strftime("%H:%M")
 
 SLACK_BOT_TOKEN      = os.environ.get("SLACK_BOT_TOKEN", "")
@@ -26,23 +26,24 @@ FUEL_OPTIONS = [
     {"text": {"type": "plain_text", "text": "0/4 — Empty"},  "value": "0/4"},
 ]
 
+# ── HELPERS ───────────────────────────────────────────────────────────────────
 def slack(endpoint, payload):
     r = requests.post(f"https://slack.com/api/{endpoint}", headers=HEADERS, json=payload, timeout=15)
     res = r.json()
     if not res.get("ok"): print(f"Slack error [{endpoint}]: {res.get('error')}")
     return res
 
-def open_modal(trigger_id, modal): slack("views.open", {"trigger_id": trigger_id, "view": modal})
+def open_modal(trigger_id, modal):
+    slack("views.open", {"trigger_id": trigger_id, "view": modal})
 
 def post_msg(channel, blocks, text, ts=None):
-     p = {"channel": channel, "text": text, "blocks": blocks, "unfurl_links": False, "unfurl_media": False}
-     if ts: p["thread_ts"] = ts
-     slack("chat.postMessage", p)
+    p = {"channel": channel, "text": text, "blocks": blocks}
+    if ts: p["thread_ts"] = ts
+    slack("chat.postMessage", p)
 
 def val(state, block_id):
     try:
         block = state["values"][block_id]
-        # Try all action keys in the block
         for action_id, action in block.items():
             if isinstance(action, dict):
                 if action.get("value") is not None:
@@ -63,66 +64,109 @@ def verify(body, ts, sig):
     except: return False
 
 # ── MODALS ────────────────────────────────────────────────────────────────────
-
 def delivery_modal(b, trigger, ch, ts):
-    open_modal(trigger, {"type":"modal","callback_id":"delivery_submit",
-        "private_metadata": json.dumps({"channel":ch,"ts":ts,"booking":b}),
-        "title":{"type":"plain_text","text":"Vehicle Delivered"},
-        "submit":{"type":"plain_text","text":"Submit"},
-        "close":{"type":"plain_text","text":"Cancel"},
-        "blocks":[
-            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | {b.get('date','—')} {b.get('time','')}"}},
-            {"type":"divider"},
-            {"type":"input","block_id":"driver_name","label":{"type":"plain_text","text":"Driver Name"},
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. Ahmed"}}},
-            {"type":"input","block_id":"delivery_time","label":{"type":"plain_text","text":"Delivery Time (GCC 24h)"},
-             "element":{"type":"plain_text_input","action_id":"value","initial_value":gcc_now(),"placeholder":{"type":"plain_text","text":"e.g. 14:30"}}},
-            {"type":"input","block_id":"out_km","label":{"type":"plain_text","text":"Out KM"},
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. 12500"}}},
-            {"type":"input","block_id":"fuel_level","label":{"type":"plain_text","text":"Fuel Level"},
-             "element":{"type":"static_select","action_id":"value","placeholder":{"type":"plain_text","text":"Select fuel level"},"options":FUEL_OPTIONS}},
-            {"type":"input","block_id":"photos_uploaded","label":{"type":"plain_text","text":"Photos Uploaded"},
-             "element":{"type":"static_select","action_id":"value","placeholder":{"type":"plain_text","text":"Select"},
-             "options":[{"text":{"type":"plain_text","text":"Yes"},"value":"Yes"},{"text":{"type":"plain_text","text":"No"},"value":"No"}]}},
-            {"type":"input","block_id":"remarks","label":{"type":"plain_text","text":"Remarks"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","multiline":True,"placeholder":{"type":"plain_text","text":"Optional"}}},
-        ]})
+    open_modal(trigger, {
+        "type": "modal", "callback_id": "delivery_submit",
+        "private_metadata": json.dumps({"channel": ch, "ts": ts, "booking": b}),
+        "title": {"type": "plain_text", "text": "Vehicle Delivered"},
+        "submit": {"type": "plain_text", "text": "Submit"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": [
+            {"type": "section", "text": {"type": "mrkdwn",
+                "text": f"*{b.get('id','—')}* | {b.get('car','—')} | {b.get('date','—')} {b.get('time','')}"}},
+            {"type": "divider"},
+            {"type": "input", "block_id": "driver_name",
+             "label": {"type": "plain_text", "text": "Driver Name"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "e.g. Ahmed"}}},
+            {"type": "input", "block_id": "delivery_time",
+             "label": {"type": "plain_text", "text": "Delivery Time (GCC 24h)"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "initial_value": gcc_now(),
+                         "placeholder": {"type": "plain_text", "text": "e.g. 14:30"}}},
+            {"type": "input", "block_id": "out_km",
+             "label": {"type": "plain_text", "text": "Out KM"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "e.g. 12500"}}},
+            {"type": "input", "block_id": "fuel_level",
+             "label": {"type": "plain_text", "text": "Fuel Level"},
+             "element": {"type": "static_select", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "Select fuel level"},
+                         "options": FUEL_OPTIONS}},
+            {"type": "input", "block_id": "photos_uploaded",
+             "label": {"type": "plain_text", "text": "Photos Uploaded"},
+             "element": {"type": "static_select", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "Select"},
+                         "options": [{"text": {"type": "plain_text", "text": "Yes"}, "value": "Yes"},
+                                     {"text": {"type": "plain_text", "text": "No"},  "value": "No"}]}},
+            {"type": "input", "block_id": "remarks", "optional": True,
+             "label": {"type": "plain_text", "text": "Remarks"},
+             "element": {"type": "plain_text_input", "action_id": "value", "multiline": True,
+                         "placeholder": {"type": "plain_text", "text": "Optional"}}},
+        ]
+    })
 
 def pickup_modal(b, trigger, ch, ts):
     out_km = b.get("out_km", "—")
-    open_modal(trigger, {"type":"modal","callback_id":"pickup_submit",
-        "private_metadata": json.dumps({"channel":ch,"ts":ts,"booking":b}),
-        "title":{"type":"plain_text","text":"Contract Closed"},
-        "submit":{"type":"plain_text","text":"Submit"},
-        "close":{"type":"plain_text","text":"Cancel"},
-        "blocks":[
-            {"type":"section","text":{"type":"mrkdwn","text":f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {out_km} | Delivered: {b.get('delivery_time','—')}"}},
-            {"type":"divider"},
-            {"type":"input","block_id":"in_km","label":{"type":"plain_text","text":"In KM"},
+    open_modal(trigger, {
+        "type": "modal", "callback_id": "pickup_submit",
+        "private_metadata": json.dumps({"channel": ch, "ts": ts, "booking": b}),
+        "title": {"type": "plain_text", "text": "Contract Closed"},
+        "submit": {"type": "plain_text", "text": "Submit"},
+        "close": {"type": "plain_text", "text": "Cancel"},
+        "blocks": [
+            {"type": "section", "text": {"type": "mrkdwn",
+                "text": f"*{b.get('id','—')}* | {b.get('car','—')} | Driver: {b.get('driver','—')} | Out KM: {out_km} | Delivered: {b.get('delivery_time','—')}"}},
+            {"type": "divider"},
+            {"type": "input", "block_id": "in_km",
+             "label": {"type": "plain_text", "text": "In KM"},
              "dispatch_action": True,
-             "element":{"type":"plain_text_input","action_id":"in_km_entered","dispatch_action_config":{"trigger_actions_on":["on_character_entered"]},"placeholder":{"type":"plain_text","text":"e.g. 12850"}}},
-            {"type":"section","block_id":"km_driven_display","text":{"type":"mrkdwn","text":f"*KM Driven:* — _(auto-calculated)_"}},
-            {"type":"input","block_id":"in_time","label":{"type":"plain_text","text":"In Time (GCC 24h)"},
-             "element":{"type":"plain_text_input","action_id":"value","initial_value":gcc_now(),"placeholder":{"type":"plain_text","text":"e.g. 18:45"}}},
-            {"type":"input","block_id":"salik","label":{"type":"plain_text","text":"Salik"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 50"}}},
-            {"type":"input","block_id":"fines","label":{"type":"plain_text","text":"Fines"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 0"}}},
-            {"type":"input","block_id":"fuel_charge","label":{"type":"plain_text","text":"Fuel Charge"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 0"}}},
-            {"type":"input","block_id":"damage_charges","label":{"type":"plain_text","text":"Damage Charges"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 0"}}},
-            {"type":"input","block_id":"amount_collected","label":{"type":"plain_text","text":"Amount Collected"},
-             "element":{"type":"plain_text_input","action_id":"value","placeholder":{"type":"plain_text","text":"e.g. AED 2,143"}}},
-            {"type":"input","block_id":"payment_mode","label":{"type":"plain_text","text":"Payment Mode"},
-             "element":{"type":"static_select","action_id":"value","placeholder":{"type":"plain_text","text":"Select"},
-             "options":[{"text":{"type":"plain_text","text":"Cash"},"value":"Cash"},{"text":{"type":"plain_text","text":"Card"},"value":"Card"},{"text":{"type":"plain_text","text":"Bank Transfer"},"value":"Bank Transfer"},{"text":{"type":"plain_text","text":"Crypto"},"value":"Crypto"}]}},
-            {"type":"input","block_id":"remarks","label":{"type":"plain_text","text":"Remarks"},"optional":True,
-             "element":{"type":"plain_text_input","action_id":"value","multiline":True,"placeholder":{"type":"plain_text","text":"Optional"}}},
-        ]})
+             "element": {"type": "plain_text_input", "action_id": "in_km_entered",
+                         "dispatch_action_config": {"trigger_actions_on": ["on_character_entered"]},
+                         "placeholder": {"type": "plain_text", "text": "e.g. 12850"}}},
+            {"type": "section", "block_id": "km_driven_display",
+             "text": {"type": "mrkdwn", "text": "*KM Driven:* — _(auto-calculated)_"}},
+            {"type": "input", "block_id": "in_time",
+             "label": {"type": "plain_text", "text": "In Time (GCC 24h)"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "initial_value": gcc_now(),
+                         "placeholder": {"type": "plain_text", "text": "e.g. 18:45"}}},
+            {"type": "input", "block_id": "salik", "optional": True,
+             "label": {"type": "plain_text", "text": "Salik"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "e.g. AED 50"}}},
+            {"type": "input", "block_id": "fines", "optional": True,
+             "label": {"type": "plain_text", "text": "Fines"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "e.g. AED 0"}}},
+            {"type": "input", "block_id": "fuel_charge", "optional": True,
+             "label": {"type": "plain_text", "text": "Fuel Charge"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "e.g. AED 0"}}},
+            {"type": "input", "block_id": "damage_charges", "optional": True,
+             "label": {"type": "plain_text", "text": "Damage Charges"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "e.g. AED 0"}}},
+            {"type": "input", "block_id": "amount_collected",
+             "label": {"type": "plain_text", "text": "Amount Collected"},
+             "element": {"type": "plain_text_input", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "e.g. AED 2,143"}}},
+            {"type": "input", "block_id": "payment_mode",
+             "label": {"type": "plain_text", "text": "Payment Mode"},
+             "element": {"type": "static_select", "action_id": "value",
+                         "placeholder": {"type": "plain_text", "text": "Select"},
+                         "options": [{"text": {"type": "plain_text", "text": "Cash"},          "value": "Cash"},
+                                     {"text": {"type": "plain_text", "text": "Card"},          "value": "Card"},
+                                     {"text": {"type": "plain_text", "text": "Bank Transfer"}, "value": "Bank Transfer"},
+                                     {"text": {"type": "plain_text", "text": "Crypto"},        "value": "Crypto"}]}},
+            {"type": "input", "block_id": "remarks", "optional": True,
+             "label": {"type": "plain_text", "text": "Remarks"},
+             "element": {"type": "plain_text_input", "action_id": "value", "multiline": True,
+                         "placeholder": {"type": "plain_text", "text": "Optional"}}},
+        ]
+    })
 
 # ── HANDLERS ─────────────────────────────────────────────────────────────────
-
 def handle_delivery(payload):
     try:
         meta          = json.loads(payload["view"]["private_metadata"])
@@ -130,12 +174,12 @@ def handle_delivery(payload):
         user          = payload["user"]["name"]
         booking       = meta["booking"]
         driver        = val(state, "driver_name")
-        out_km        = val(state, "out_km")
         delivery_time = val(state, "delivery_time")
+        out_km        = val(state, "out_km")
         booking.update({"driver": driver, "out_km": out_km, "delivery_time": delivery_time})
-        print(f"handle_delivery: {booking.get('id','—')} → CHANNEL_DELIVERY {CHANNEL_DELIVERY}")
+        print(f"handle_delivery: {booking.get('id','—')} → {CHANNEL_DELIVERY}")
         post_msg(CHANNEL_DELIVERY, [
-            {"type":"section","text":{"type":"mrkdwn","text":(
+            {"type": "section", "text": {"type": "mrkdwn", "text": (
                 f"✅ *DELIVERY COMPLETED*\n```\n"
                 f"{'AGR#':<14}: {booking.get('id','—')}\n"
                 f"{'Car':<14}: {booking.get('car','—')}\n"
@@ -146,13 +190,15 @@ def handle_delivery(payload):
                 f"{'Photos':<14}: {val(state,'photos_uploaded')}\n"
                 f"{'Remarks':<14}: {val(state,'remarks')}\n```"
             )}},
-            {"type":"divider"},
-            {"type":"actions","elements":[
-                {"type":"button","text":{"type":"plain_text","text":"🔑  Pickup"},"style":"primary","action_id":"open_pickup","value":json.dumps(booking)},
+            {"type": "divider"},
+            {"type": "actions", "elements": [
+                {"type": "button", "text": {"type": "plain_text", "text": "🔑  Pickup"},
+                 "style": "primary", "action_id": "open_pickup", "value": json.dumps(booking)},
             ]},
-            {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user} | Pickup: PENDING | <#{CHANNEL_BOOKINGS}> booking thread: {meta.get('ts','')}"}]},
+            {"type": "context", "elements": [{"type": "mrkdwn",
+                "text": f"Submitted by @{user} | Pickup: PENDING"}]},
         ], f"✅ Delivery completed by {user}")
-        print(f"handle_delivery: posted OK to CHANNEL_DELIVERY")
+        print(f"handle_delivery: posted OK")
     except Exception as e:
         print(f"handle_delivery ERROR: {e}")
         import traceback; traceback.print_exc()
@@ -163,19 +209,15 @@ def handle_pickup(payload):
         state   = payload["view"]["state"]
         user    = payload["user"]["name"]
         booking = meta.get("booking", {})
-
-        # Auto-calculate driven KM
         in_km_str  = val(state, "in_km")
         out_km_str = booking.get("out_km", "—")
         try:
-            driven_km = int(in_km_str) - int(out_km_str)
-            driven_str = f"{driven_km} KM"
+            driven_str = f"{int(in_km_str) - int(out_km_str)} KM"
         except:
             driven_str = "—"
-
-        print(f"handle_pickup: {booking.get('id','—')} → CHANNEL_PICKUP {CHANNEL_PICKUP}")
+        print(f"handle_pickup: {booking.get('id','—')} → {CHANNEL_PICKUP}")
         post_msg(CHANNEL_PICKUP, [
-            {"type":"section","text":{"type":"mrkdwn","text":(
+            {"type": "section", "text": {"type": "mrkdwn", "text": (
                 f"✅ *CONTRACT CLOSED*\n```\n"
                 f"{'AGR#':<16}: {booking.get('id','—')}\n"
                 f"{'Car':<16}: {booking.get('car','—')}\n"
@@ -196,15 +238,51 @@ def handle_pickup(payload):
                 f"{'Remarks':<16}: {val(state,'remarks')}\n```\n"
                 f"*CONTRACT CLOSED — NO FURTHER ACTION REQUIRED*"
             )}},
-            {"type":"context","elements":[{"type":"mrkdwn","text":f"Submitted by @{user}"}]},
+            {"type": "context", "elements": [{"type": "mrkdwn",
+                "text": f"Submitted by @{user}"}]},
         ], f"✅ Contract closed by {user}")
-        print(f"handle_pickup: posted OK to {CHANNEL_PICKUP}")
+        print(f"handle_pickup: posted OK")
     except Exception as e:
         print(f"handle_pickup ERROR: {e}")
         import traceback; traceback.print_exc()
 
-# ── HTTP Handler ──────────────────────────────────────────────────────────────
+def handle_km_update(payload):
+    """Live KM Driven update as driver types In KM."""
+    try:
+        meta    = json.loads(payload["view"]["private_metadata"])
+        booking = meta.get("booking", {})
+        out_km  = booking.get("out_km", "—")
+        in_km   = payload["actions"][0].get("value", "")
+        try:
+            driven = int(in_km) - int(out_km)
+            km_text = f"*KM Driven:* {driven} KM"
+        except:
+            km_text = "*KM Driven:* — _(auto-calculated)_"
 
+        blocks = payload["view"]["blocks"]
+        for block in blocks:
+            if block.get("block_id") == "km_driven_display":
+                block["text"]["text"] = km_text
+                break
+
+        slack("views.update", {
+            "view_id": payload["view"]["id"],
+            "hash":    payload["view"]["hash"],
+            "view": {
+                "type":             "modal",
+                "callback_id":      "pickup_submit",
+                "private_metadata": payload["view"]["private_metadata"],
+                "title":            payload["view"]["title"],
+                "submit":           payload["view"]["submit"],
+                "close":            payload["view"]["close"],
+                "blocks":           blocks,
+            }
+        })
+        print(f"KM update: out={out_km} in={in_km} driven={km_text}")
+    except Exception as e:
+        print(f"handle_km_update ERROR: {e}")
+
+# ── HTTP HANDLER ──────────────────────────────────────────────────────────────
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, f, *a): print(f"[{self.address_string()}] {f%a}")
 
@@ -227,7 +305,6 @@ class Handler(BaseHTTPRequestHandler):
         sig  = self.headers.get("X-Slack-Signature", "")
         print(f"POST {self.path} [{n} bytes]")
 
-        # URL verification challenge
         try:
             jb = json.loads(body.decode())
             if jb.get("type") == "url_verification":
@@ -247,64 +324,29 @@ class Handler(BaseHTTPRequestHandler):
         print(f"Type: {ptype}")
 
         if ptype == "block_actions":
-            aid     = payload["actions"][0]["action_id"]
-            trigger = payload["trigger_id"]
-            ch      = payload["container"]["channel_id"]
-            mts     = payload["container"]["message_ts"]
-            try: bk = json.loads(payload["actions"][0].get("value", "{}"))
-            except: bk = {}
+            aid = payload["actions"][0]["action_id"]
             print(f"Action: {aid}")
 
-            if aid == "open_delivery":
-                delivery_modal(bk, trigger, ch, mts)
+            if aid == "in_km_entered":
+                self.send_json(200, b"")
+                threading.Thread(target=handle_km_update, args=(payload,), daemon=True).start()
 
-            elif aid == "open_pickup":
-                pickup_modal(bk, trigger, ch, mts)
-
-            elif aid == "in_km_entered":
-                # Live KM Driven calculation — update modal
-                try:
-                    meta    = json.loads(payload["view"]["private_metadata"])
-                    booking = meta.get("booking", {})
-                    out_km  = booking.get("out_km", "—")
-                    in_km   = payload["actions"][0].get("value", "")
-                    try:
-                        driven = int(in_km) - int(out_km)
-                        km_text = f"*KM Driven:* {driven} KM"
-                    except:
-                        km_text = f"*KM Driven:* — _(enter In KM above)_"
-
-                    # Rebuild blocks with updated km_driven_display
-                    blocks = payload["view"]["blocks"]
-                    for block in blocks:
-                        if block.get("block_id") == "km_driven_display":
-                            block["text"]["text"] = km_text
-                            break
-
-                    slack("views.update", {
-                        "view_id": payload["view"]["id"],
-                        "hash":    payload["view"]["hash"],
-                        "view": {
-                            "type":             "modal",
-                            "callback_id":      "pickup_submit",
-                            "private_metadata": payload["view"]["private_metadata"],
-                            "title":            payload["view"]["title"],
-                            "submit":           payload["view"]["submit"],
-                            "close":            payload["view"]["close"],
-                            "blocks":           blocks,
-                        }
-                    })
-                except Exception as e:
-                    print(f"views.update ERROR: {e}")
-
-            self.send_json(200, b"")
+            else:
+                trigger = payload["trigger_id"]
+                ch      = payload["container"]["channel_id"]
+                mts     = payload["container"]["message_ts"]
+                try: bk = json.loads(payload["actions"][0].get("value", "{}"))
+                except: bk = {}
+                if aid == "open_delivery":
+                    delivery_modal(bk, trigger, ch, mts)
+                elif aid == "open_pickup":
+                    pickup_modal(bk, trigger, ch, mts)
+                self.send_json(200, b"")
 
         elif ptype == "view_submission":
             cb = payload["view"]["callback_id"]
             print(f"Submit: {cb}")
-            # ── Respond to Slack immediately (must be within 3 seconds) ──
             self.send_json(200, b'{"response_action":"clear"}')
-            # ── Post to Slack in background so we never breach the timeout ──
             if cb == "delivery_submit":
                 threading.Thread(target=handle_delivery, args=(payload,), daemon=True).start()
             elif cb == "pickup_submit":
