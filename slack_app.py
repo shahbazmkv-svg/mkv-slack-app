@@ -1,3 +1,4 @@
+#v2
 import os, json, hashlib, hmac, time, threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote_plus
