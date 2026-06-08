@@ -243,7 +243,7 @@ def handle_delivery(payload):
             # Also post reply in booking thread in #mkv-bookings
             thread_ts = meta.get("ts")
             if thread_ts:
-            post_msg(CHANNEL_BOOKINGS, [
+                post_msg(CHANNEL_BOOKINGS, [
                 {"type": "context", "elements": [{"type": "mrkdwn", "text": (
                     f"✅ *Delivered* | Driver: {driver} | Out KM: {out_km} | "
                     f"Fuel: {val(state,'fuel_level')} | Time: {delivery_time} | "
