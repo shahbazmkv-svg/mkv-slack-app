@@ -113,6 +113,7 @@ def update_delivery_store(booking, delivery_ts):
     entry.update({
         "delivery_ts": delivery_ts,
         "delivery_alerted": True,
+        "delivery_channel": CHANNEL_DELIVERY,
         "out_km": booking.get("out_km", ""),
         "driver": booking.get("driver", ""),
         "delivery_time": booking.get("delivery_time", ""),
