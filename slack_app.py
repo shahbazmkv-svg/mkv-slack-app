@@ -244,12 +244,12 @@ def handle_delivery(payload):
             thread_ts = meta.get("ts")
             if thread_ts:
                 post_msg(CHANNEL_BOOKINGS, [
-                {"type": "context", "elements": [{"type": "mrkdwn", "text": (
-                    f"✅ *Delivered* | Driver: {driver} | Out KM: {out_km} | "
-                    f"Fuel: {val(state,'fuel_level')} | Time: {delivery_time} | "
-                    f"By @{user}"
-                )}]},
-            ], f"Delivered by {driver}", thread_ts)
+                    {"type": "context", "elements": [{"type": "mrkdwn", "text": (
+                        f"✅ *Delivered* | Driver: {driver} | Out KM: {out_km} | "
+                        f"Fuel: {val(state,'fuel_level')} | Time: {delivery_time} | "
+                        f"By @{user}"
+                    )}]},
+                ], f"Delivered by {driver}", thread_ts)
         print("handle_delivery: posted OK")
     except Exception as e:
         print(f"handle_delivery ERROR: {e}")
@@ -378,7 +378,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         raw = parse_qs(body.decode())
-        payload = json.loads(unquote_plus(raw.get("payload", ["{}"]) [0]))
+        payload = json.loads(unquote_plus(raw.get("payload", ["{}"])[0]))
         ptype = payload.get("type")
         print(f"Type: {ptype}")
 
