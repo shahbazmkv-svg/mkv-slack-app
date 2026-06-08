@@ -240,6 +240,16 @@ def handle_delivery(payload):
         if delivery_ts:
             booking["delivery_ts"] = delivery_ts
             update_delivery_store(booking, delivery_ts)
+            # Also post reply in booking thread in #mkv-bookings
+            thread_ts = meta.get("ts")
+            if thread_ts:
+            post_msg(CHANNEL_BOOKINGS, [
+                {"type": "context", "elements": [{"type": "mrkdwn", "text": (
+                    f"✅ *Delivered* | Driver: {driver} | Out KM: {out_km} | "
+                    f"Fuel: {val(state,'fuel_level')} | Time: {delivery_time} | "
+                    f"By @{user}"
+                )}]},
+            ], f"Delivered by {driver}", thread_ts)
         print("handle_delivery: posted OK")
     except Exception as e:
         print(f"handle_delivery ERROR: {e}")
