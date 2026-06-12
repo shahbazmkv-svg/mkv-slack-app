@@ -354,6 +354,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         print(f"GET {self.path}")
+        if self.path == "/store":
+            store = load_store()
+            self.send_json(200, json.dumps(store).encode())
+            return
         self.send_json(200, b'{"status":"ok","service":"MKV Slack App"}')
 
     def do_POST(self):
