@@ -215,7 +215,8 @@ def handle_delivery(payload):
         driver = val(state, "driver_name")
         delivery_time = val(state, "delivery_time")
         out_km = val(state, "out_km")
-        booking.update({"driver": driver, "out_km": out_km, "delivery_time": delivery_time})
+        out_date = datetime.now(timezone(timedelta(hours=4))).strftime("%d-%b-%Y")
+        booking.update({"driver": driver, "out_km": out_km, "delivery_time": delivery_time, "out_date": out_date})
 
         print(f"handle_delivery: {booking.get('id','-')} -> {CHANNEL_DELIVERY}")
         delivery_ts = post_msg(CHANNEL_DELIVERY, [
@@ -278,8 +279,9 @@ def handle_pickup(payload):
                 f"{'Car':<16}: {booking.get('car','-')}\n"
                 f"{'Driver':<16}: {booking.get('driver','-')}\n"
                 f"{'-' * 34}\n"
-                f"{'Out KM':<16}: {out_km_str}\n"
-                f"{'Delivered At':<16}: {booking.get('delivery_time','-')}\n"
+                f"{'Date Out':<16}: {booking.get('out_date','-')}\n"
+                f"{'Time Out':<16}: {booking.get('delivery_time','-')}\n"
+                f"{'KM Out':<16}: {out_km_str}\n"
                 f"{'In KM':<16}: {in_km_str}\n"
                 f"{'In Time':<16}: {val(state,'in_time')}\n"
                 f"{'KM Driven':<16}: {driven_str}\n"
