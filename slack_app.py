@@ -192,6 +192,7 @@ def pickup_modal(b, trigger, ch, ts):
             {"type": "divider"},
             {"type": "input", "block_id": "in_km", "label": {"type": "plain_text", "text": "In KM"}, "dispatch_action": True, "element": {"type": "plain_text_input", "action_id": "in_km_entered", "dispatch_action_config": {"trigger_actions_on": ["on_character_entered"]}, "placeholder": {"type": "plain_text", "text": "e.g. 12850"}}},
             {"type": "section", "block_id": "km_driven_display", "text": {"type": "mrkdwn", "text": "*KM Driven:* - (auto-calculated)"}},
+            {"type": "input", "block_id": "in_date", "label": {"type": "plain_text", "text": "In Date"}, "element": {"type": "plain_text_input", "action_id": "value", "initial_value": datetime.now(timezone(timedelta(hours=4))).strftime("%d-%b-%Y"), "placeholder": {"type": "plain_text", "text": "e.g. 14-Jun-2026"}}},
             {"type": "input", "block_id": "in_time", "label": {"type": "plain_text", "text": "In Time (GCC 24h)"}, "element": {"type": "plain_text_input", "action_id": "value", "initial_value": gcc_now(), "placeholder": {"type": "plain_text", "text": "e.g. 18:45"}}},
             {"type": "input", "block_id": "salik", "optional": True, "label": {"type": "plain_text", "text": "Salik"}, "element": {"type": "plain_text_input", "action_id": "value", "placeholder": {"type": "plain_text", "text": "e.g. AED 50"}}},
             {"type": "input", "block_id": "fines", "optional": True, "label": {"type": "plain_text", "text": "Fines"}, "element": {"type": "plain_text_input", "action_id": "value", "placeholder": {"type": "plain_text", "text": "e.g. AED 0"}}},
@@ -281,9 +282,10 @@ def handle_pickup(payload):
                 f"{'-' * 34}\n"
                 f"{'Date Out':<16}: {booking.get('out_date','-')}\n"
                 f"{'Time Out':<16}: {booking.get('delivery_time','-')}\n"
-                f"{'KM Out':<16}: {out_km_str}\n"
-                f"{'In KM':<16}: {in_km_str}\n"
-                f"{'In Time':<16}: {val(state,'in_time')}\n"
+                f"{'Out Kms':<16}: {out_km_str}\n"
+                f"{'Date In':<16}: {val(state,'in_date')}\n"
+                f"{'Time In':<16}: {val(state,'in_time')}\n"
+                f"{'In Kms':<16}: {in_km_str}\n"
                 f"{'KM Driven':<16}: {driven_str}\n"
                 f"{'-' * 34}\n"
                 f"{'Salik':<16}: {val(state,'salik')}\n"
